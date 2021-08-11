@@ -7,6 +7,13 @@ export default function Timer(props: { time: number, width: number }) {
 
     const [time, setTime] = useState(props.time);
 
+    console.log('timer render');
+
+    useEffect(() => {
+        console.log('timer useEffect');
+        return () => console.log('timer useEffect clean up');
+    }, [])
+
     useEffect(() => {
         const timer = setInterval(() => {
             setTime(time - 1);

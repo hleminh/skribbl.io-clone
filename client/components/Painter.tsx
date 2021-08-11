@@ -5,7 +5,9 @@ import { RiBrushFill } from 'react-icons/ri';
 import { Colors } from '../constants/colors';
 import { Tools } from '../constants/tools';
 import Tooltip from './Tooltip';
-import { ws } from './WebSocket';
+import { get } from './WebSocket';
+
+const ws = get();
 
 export default function Paint(props: { height: number, width: number }) {
     const [drawing, setDrawing] = useState(false);
@@ -15,8 +17,10 @@ export default function Paint(props: { height: number, width: number }) {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const canvasContextRef = useRef<CanvasRenderingContext2D | null>(null);
     const cursorRef = useRef<HTMLDivElement>(null);
+    console.log('painter render');
 
     useEffect(() => {
+        console.log('painter useEffect');
         if (canvasRef) {
             canvasContextRef.current = canvasRef.current!.getContext('2d');
             canvasContextRef.current!.fillStyle = 'white';
@@ -25,14 +29,6 @@ export default function Paint(props: { height: number, width: number }) {
         cursorRef.current!.style.width = `${brush.width}px`;
         cursorRef.current!.style.height = `${brush.width}px`;
         hideCursor();
-
-        ws!.onerror = (event) => {
-            console.log(event);
-        }
-
-        ws!.onopen = (event) => {
-            console.log(event);
-        }
 
         ws!.addEventListener('message', (event) => {
             const data = event.data.split(',');
@@ -59,10 +55,7 @@ export default function Paint(props: { height: number, width: number }) {
                     break;
             }
         });
-
-        ws!.onclose = (event) => {
-            console.log(event);
-        }
+        return () => console.log('painter useEffect clean up');
     }, []);
 
     const mouseDownHandler: MouseEventHandler = (e: React.MouseEvent<HTMLCanvasElement, MouseEvent>) => {

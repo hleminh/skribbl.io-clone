@@ -1,7 +1,7 @@
-import React, { ReactNode } from 'react';
+import React from 'react';
 import { MouseEventHandler } from 'react';
 
-export default function WoodChoose(props: { children?: ReactNode }) {
+export default function WoodChoose() {
     const chooseWord: MouseEventHandler = (e: React.MouseEvent<HTMLButtonElement, MouseEvent>) => {
         console.log(e.currentTarget.value);
     }

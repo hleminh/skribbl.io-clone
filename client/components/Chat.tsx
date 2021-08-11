@@ -1,6 +1,8 @@
 import React, { FormEventHandler, useEffect, useRef, useState } from 'react';
 import Message from './Message';
-import { ws } from './WebSocket';
+import { get } from './WebSocket';
+
+const ws = get();
 
 export default function Chat(props: { height: number }) {
 
@@ -25,7 +27,11 @@ export default function Chat(props: { height: number }) {
         }
     }
 
+    console.log('chat render');
+
     useEffect(() => {
+        console.log('chat useEffect');
+
         ws!.addEventListener('message', (event) => {
             const data = event.data.split(',');
 

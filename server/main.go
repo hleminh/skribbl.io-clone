@@ -1,8 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"log"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
@@ -23,7 +26,28 @@ type Message struct {
 	content []byte
 }
 
+type Player struct {
+	Name   string `json:"name"`
+	IsHost bool   `json:"isHost"`
+	IsYou  bool   `json:"isYou"`
+}
+
+// external data that will be exposed to clients
+type GameState struct {
+	RoomURL  string   `json:"roomURL"`
+	Rounds   int      `json:"rounds"`
+	DrawTime int      `json:"drawTime"`
+	Stage    string   `json:"stage"`
+	Players  []Player `json:"players"`
+}
+
+// internal data not exposed to clients
 type Hub struct {
+	id         string
+	hostAddr   string
+	rounds     int
+	drawTime   int
+	stage      string
 	clients    map[*Client]bool
 	broadcast  chan Message
 	register   chan *Client
@@ -31,13 +55,23 @@ type Hub struct {
 }
 
 type Client struct {
-	hub  *Hub
-	conn *websocket.Conn
-	send chan []byte
+	name   string
+	hub    *Hub
+	conn   *websocket.Conn
+	send   chan []byte
+	isHost bool
 }
 
-func newHub() *Hub {
+type CreateRoomRequest struct {
+	PlayerName string `json:"playerName"`
+}
+
+func newHub(hostAddr string) *Hub {
 	return &Hub{
+		hostAddr:   hostAddr,
+		rounds:     3,
+		drawTime:   60,
+		stage:      "wait",
 		clients:    make(map[*Client]bool),
 		broadcast:  make(chan Message),
 		register:   make(chan *Client),
@@ -56,14 +90,45 @@ func (h *Hub) run() {
 				close(client.send)
 			}
 		case message := <-h.broadcast:
+			data := strings.Split(string(message.content), ",")
+			switch data[0] {
+			case "getGameState":
+				players := make([]Player, 0)
+				for client := range h.clients {
+					players = append(players, Player{
+						Name:   client.name,
+						IsHost: client.isHost,
+						IsYou:  client.conn.RemoteAddr().String() == message.sender.conn.RemoteAddr().String(),
+					})
+				}
+				gameState := GameState{
+					RoomURL:  h.id,
+					Rounds:   h.rounds,
+					DrawTime: h.drawTime,
+					Stage:    h.stage,
+					Players:  players,
+				}
+				gameStateJSON, err := json.Marshal(gameState)
+				if err != nil {
+					log.Println(err)
+				}
+				message.sender.send <- gameStateJSON
+				continue
+			case "setRounds":
+				rounds, _ := strconv.Atoi(data[1])
+				h.rounds = rounds
+			case "setDrawTime":
+				drawTime, _ := strconv.Atoi(data[1])
+				h.drawTime = drawTime
+			case "setStage":
+				h.stage = data[1]
+			}
 			for client := range h.clients {
-				if client != message.sender {
-					select {
-					case client.send <- message.content:
-					default:
-						delete(h.clients, client)
-						close(client.send)
-					}
+				select {
+				case client.send <- message.content:
+				default:
+					delete(h.clients, client)
+					close(client.send)
 				}
 			}
 		}
@@ -95,25 +160,61 @@ func (c *Client) wsWriteHandler() {
 }
 
 func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
+	playerName := r.URL.Query().Get("playerName")
+	if len(playerName) == 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println(err)
 	}
-	client := &Client{h, conn, make(chan []byte)}
+	client := &Client{
+		name:   playerName,
+		hub:    h,
+		conn:   conn,
+		send:   make(chan []byte),
+		isHost: len(h.clients) == 0,
+	}
 	h.register <- client
 	go client.wsReadHandler()
 	go client.wsWriteHandler()
 }
 
 func main() {
-	h := newHub()
-	go h.run()
+
+	hubs := make(map[string]*Hub)
 
 	serveMux := mux.NewRouter()
 
 	serveMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		h := newHub(r.RemoteAddr)
+		go h.run()
+		id := strconv.Itoa(len(hubs))
+		hubs[id] = h
+		h.id = id
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Write([]byte(id))
+	}).Methods(http.MethodPost)
+
+	serveMux.HandleFunc("/{rid}", func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		_, ok := hubs[vars["rid"]]
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+	}).Methods(http.MethodOptions)
+
+	serveMux.HandleFunc("/{rid}", func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		h, ok := hubs[vars["rid"]]
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
 		serveWS(h, w, r)
-	})
+	}).Methods(http.MethodGet)
 
 	if err := http.ListenAndServe(addr, serveMux); err != nil {
 		log.Println(err)

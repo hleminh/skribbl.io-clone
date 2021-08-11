@@ -1,35 +1,37 @@
-import React, { Fragment } from 'react';
-import dynamic from 'next/dynamic'
-import Timer from '../components/Timer';
-import WordChooser from '../components/WordChooser';
-import WaitingRoom from '../components/WaitingRoom';
+import dynamic from 'next/dynamic';
+import React, { Fragment, useContext, useEffect } from 'react';
 import CreateRoom from '../components/CreateRoom';
+import { GameContext } from './_app';
 
 // import styles from '../styles/Home.module.css';
 
-const Painter = dynamic(
-    () => import('../components/Painter'),
+const PlayRoom = dynamic(
+    () => import('../components/PlayRoom'),
     { ssr: false }
 )
 
-const Chat = dynamic(
-    () => import('../components/Chat'),
+const WaitRoom = dynamic(
+    () => import('../components/WaitRoom'),
     { ssr: false }
 )
 
 export default function Home() {
+    const gameContext = useContext(GameContext);
+
+    const render = (stage: string) => {
+        switch (stage) {
+            case 'wait':
+                return <WaitRoom />
+            case 'play':
+                return <PlayRoom />
+            default:
+                return <CreateRoom />
+        }
+    }
+
     return (
-        <div className='flex relative'>
-            <div className='flex flex-col flex-auto items-center m-4'>
-                <Timer time={60} width={800} />
-                <Painter height={500} width={800} />
-            </div>
-            <div className='flex flex-col flex-auto items-center m-4'>
-                <Chat height={500}></Chat>
-            </div>
-            {/* <WordChooser /> */}
-            {/* <WaitingRoom /> */}
-            {/* <CreateRoom /> */}
+        <div className='w-full h-full'>
+            {render(gameContext.gameState.stage)}
         </div>
     )
 }
