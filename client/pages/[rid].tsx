@@ -51,7 +51,7 @@ export default function Room() {
     }, []);
 
     return (
-        <div className='w-full h-full'>
+        <div className='w-full h-full pr-64 pl-64'>
             {render(gameContext.gameState.stage)}
         </div>
     )

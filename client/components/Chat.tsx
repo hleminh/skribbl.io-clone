@@ -1,5 +1,6 @@
-import React, { FormEventHandler, useEffect, useRef, useState } from 'react';
-import Message from './Message';
+import React, { FormEventHandler, useContext, useEffect, useRef, useState } from 'react';
+import { GameContext } from '../pages/_app';
+import ChatMessage from './ChatMessage';
 import { get } from './WebSocket';
 
 const ws = get();
@@ -8,11 +9,21 @@ export default function Chat(props: { height: number }) {
 
     const [messages, setMessages] = useState<string[]>([]);
 
-    const messagesList = messages.map((msg, index) => <Message key={index}>{msg}</Message>)
+    const messagesList = messages.map((msg, index) => <ChatMessage key={index}>{msg}</ChatMessage>)
 
     const textAreaRef = useRef<HTMLTextAreaElement>(null);
 
     const messagesListRef = useRef<HTMLDivElement>(null);
+
+    const gameContext = useContext(GameContext);
+
+    const gameStateRef = useRef<any>();
+
+    const player = gameContext.gameState.players.find((player: any) => player.isYou);
+
+    useEffect(() => {
+        gameStateRef.current = gameContext.gameState;
+    }, [gameContext.gameState]);
 
     const sendMessage: FormEventHandler = (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
@@ -20,9 +31,12 @@ export default function Chat(props: { height: number }) {
         if (textAreaRef.current!.value) {
             setMessages(messages => [
                 ...messages,
-                newMessage
+                `${player.name} (You): ${newMessage}`
             ]);
-            ws!.send(`chat,${newMessage}`);
+            ws!.send(JSON.stringify({
+                directive: 'chat',
+                data: newMessage
+            }));
             textAreaRef.current!.value = '';
         }
     }
@@ -33,20 +47,24 @@ export default function Chat(props: { height: number }) {
         console.log('chat useEffect');
 
         ws!.addEventListener('message', (event) => {
-            const data = event.data.split(',');
+            const msg = JSON.parse(event.data);
 
-            if (data[0] === 'chat') {
-                setMessages(messages => [
-                    ...messages,
-                    data[1]
-                ]);
+            switch(msg.directive) {
+                case 'chat':
+                    const sender = gameStateRef.current.players.find((player: any) => player.id === msg.senderId);
+                    const senderName = `${sender.name}${sender.isYou ? ' (You)' : ''}`;
+                    setMessages((messages: any) => [
+                        ...messages,
+                        `${senderName}: ${msg.data}`
+                    ]);
+                    break;
             }
         });
-    }, [])
+    }, []);
 
     useEffect(() => {
         messagesListRef.current!.scrollTop = messagesListRef.current!.scrollHeight;
-    }, [messages])
+    }, [messages]);
 
     return (
         <div

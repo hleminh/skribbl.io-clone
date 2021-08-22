@@ -13,7 +13,9 @@ export const init = (roomId: string, playerName: string): Promise<any> => {
         }
 
         ws.onopen = (event) => {
-            ws.send('getGameState');
+            ws.send(JSON.stringify({
+                "directive": "getGameState"
+            }));
         }
     })
  }

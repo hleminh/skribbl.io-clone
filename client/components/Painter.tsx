@@ -1,18 +1,22 @@
-import React, { MouseEventHandler, useEffect, useRef, useState } from 'react';
+import React, { MouseEventHandler, useContext, useEffect, useRef, useState } from 'react';
 import { FaTrashAlt, FaEraser } from 'react-icons/fa';
 import { GrPaint } from 'react-icons/gr';
 import { RiBrushFill } from 'react-icons/ri';
 import { Colors } from '../constants/colors';
 import { Tools } from '../constants/tools';
+import { GameContext } from '../pages/_app';
 import Tooltip from './Tooltip';
 import { get } from './WebSocket';
+import WordChooser from './WordChooser';
 
 const ws = get();
 
 export default function Paint(props: { height: number, width: number }) {
     const [drawing, setDrawing] = useState(false);
     const [mouseCoors, setMouseCoors] = useState({ x: 0, y: 0 });
-    const [brush, setBrush] = useState({ tool: Tools.Brush, color: 'black', prevColor: 'black', width: 2 })
+    const [brush, setBrush] = useState({ tool: Tools.Brush, color: 'black', prevColor: 'black', width: 2 });
+
+    const gameContext = useContext(GameContext);
 
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const canvasContextRef = useRef<CanvasRenderingContext2D | null>(null);
@@ -31,19 +35,20 @@ export default function Paint(props: { height: number, width: number }) {
         hideCursor();
 
         ws!.addEventListener('message', (event) => {
-            const data = event.data.split(',');
+            const msg = JSON.parse(event.data);
 
-            switch (data[0]) {
+            switch (msg.directive) {
                 case 'draw':
                     const ctx = canvasContextRef.current;
-                    ctx!.strokeStyle = data[1];
-                    ctx!.lineWidth = data[2];
+                    const data = JSON.parse(msg.data);
+                    ctx!.strokeStyle = data.strokeStyle;
+                    ctx!.lineWidth = data.lineWidth;
                     ctx!.lineCap = 'round';
                     ctx!.lineJoin = 'round';
                     ctx!.imageSmoothingEnabled = false;
                     ctx!.beginPath();
-                    ctx!.moveTo(data[3], data[4]);
-                    ctx!.lineTo(data[5], data[6]);
+                    ctx!.moveTo(data.moveToX, data.moveToY);
+                    ctx!.lineTo(data.lineToX, data.lineToY);
                     ctx!.closePath();
                     ctx!.stroke();
                     break;
@@ -92,7 +97,9 @@ export default function Paint(props: { height: number, width: number }) {
 
     const clearCanvas: MouseEventHandler = (e: React.MouseEvent<HTMLElement, MouseEvent>) => {
         canvasContextRef.current!.clearRect(0, 0, canvasRef.current!.width, canvasRef.current!.height);
-        ws!.send(`clear`);
+        ws!.send(JSON.stringify({
+            directive: 'clear'
+        }));
     }
 
     const changeBrushColor: MouseEventHandler = (e: React.MouseEvent<HTMLButtonElement, MouseEvent>) => {
@@ -138,7 +145,17 @@ export default function Paint(props: { height: number, width: number }) {
             ctx!.closePath();
             ctx!.stroke();
 
-            ws!.send(`draw,${brush.color},${brush.width},${mouseCoors.x},${mouseCoors.y},${e.nativeEvent.offsetX},${e.nativeEvent.offsetY}`);
+            ws!.send(JSON.stringify({
+                directive: "draw",
+                data: JSON.stringify({
+                    strokeStyle: brush.color,
+                    lineWidth: brush.width,
+                    moveToX: mouseCoors.x,
+                    moveToY: mouseCoors.y,
+                    lineToX: e.nativeEvent.offsetX,
+                    lineToY: e.nativeEvent.offsetY,
+                })
+            }));
 
             setMouseCoors({
                 x: e.nativeEvent.offsetX,
@@ -248,10 +265,13 @@ export default function Paint(props: { height: number, width: number }) {
     return (
         <div className='flex flex-col items-center'>
             <div
-                className='flex-none border-black border mb-2'
+                className='relative flex-none border-black border mb-2'
                 onMouseUp={stopDrawing}
                 onMouseLeave={stopDrawing}
             >
+                {gameContext.gameState.word === '' && 
+                    <WordChooser />
+                }
                 <canvas
                     className='block cursor-none'
                     height={props.height}
@@ -270,7 +290,7 @@ export default function Paint(props: { height: number, width: number }) {
             <div className={`absolute pointer-events-none rounded-full shadow-inner border-black border`} style={{ background: brush.color }} ref={cursorRef}>
             </div>
 
-            <div className='bg-gray-200 p-4 border border-black'>
+            <div className='bg-gray-100 p-4 border border-black'>
                 <div className='flex mb-4'>
                     <Tooltip text='Brush'>
                         <button

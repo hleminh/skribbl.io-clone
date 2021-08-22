@@ -29,7 +29,7 @@ export default function Timer(props: { time: number, width: number }) {
             <div className='flex-none flex items-center pr-2 pl-2 border border-black rounded-tl-full rounded-bl-full' ref={timerIconRef}>
                 <RiTimerLine />
             </div>
-            <div className='flex-auto bg-gray-200 border border-box border-l-0 border-black rounded-tr-full rounded-br-full overflow-hidden'>
+            <div className='flex-auto bg-gray-100 border border-box border-l-0 border-black rounded-tr-full rounded-br-full overflow-hidden'>
                 <div 
                     className='text-right mr-2 text-white' 
                     style={{ 
@@ -40,7 +40,7 @@ export default function Timer(props: { time: number, width: number }) {
                     }} 
                     ref={timerProgressRef}
                 >
-                    <div className='mr-2 pointer-events-none'>{time}</div>
+                    <div className='mr-2 select-none'>{time}</div>
                 </div>
             </div>
         </div>

@@ -1,8 +1,7 @@
 import React, { useContext, useRef } from 'react';
 import { MouseEventHandler } from 'react';
-import router from 'next/router'
 import { GameContext } from '../pages/_app';
-import { init, get } from './WebSocket';
+import { init } from './WebSocket';
 
 export default function CreateRoom() {
     const nameInputRef = useRef<HTMLInputElement>(null);
@@ -18,8 +17,9 @@ export default function CreateRoom() {
         })
             .then(response => response.json())
             .then(roomId => {
-                init(roomId, playerName).then((data) => {
-                    gameContext.updateGameState(JSON.parse(data));
+                init(roomId, playerName).then((msg) => {
+                    const parsedMsg = JSON.parse(msg);
+                    gameContext.updateGameState(JSON.parse(parsedMsg.data));
                 });
             });
     }

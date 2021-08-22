@@ -3,7 +3,7 @@ import { MouseEventHandler } from 'react';
 import { init } from '../components/WebSocket';
 import { GameContext } from '../pages/_app';
 
-export default function JoinRoom({roomId}: {roomId: string}) {
+export default function JoinRoom({roomId}: {[key: string]: any}) {
     const nameInputRef = useRef<HTMLInputElement>(null);
 
     const gameContext = useContext(GameContext);
@@ -12,8 +12,9 @@ export default function JoinRoom({roomId}: {roomId: string}) {
 
         const playerName = nameInputRef.current!.value;
 
-        init(roomId, playerName).then((data) => {
-            gameContext.updateGameState(JSON.parse(data));
+        init(roomId, playerName).then((msg) => {
+            const parsedMsg = JSON.parse(msg);
+            gameContext.updateGameState(JSON.parse(parsedMsg.data));
         });
     }
 
