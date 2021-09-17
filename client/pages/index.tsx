@@ -1,9 +1,8 @@
 import dynamic from 'next/dynamic';
-import React, { Fragment, useContext, useEffect } from 'react';
+import React, { useContext } from 'react';
 import CreateRoom from '../components/CreateRoom';
+import { LobbyState } from '../models/LobbyState';
 import { GameContext } from './_app';
-
-// import styles from '../styles/Home.module.css';
 
 const PlayRoom = dynamic(
     () => import('../components/PlayRoom'),
@@ -18,11 +17,12 @@ const WaitRoom = dynamic(
 export default function Home() {
     const gameContext = useContext(GameContext);
 
-    const render = (stage: string) => {
-        switch (stage) {
-            case 'wait':
+    const render = (lobbyState: LobbyState) => {
+        switch (lobbyState) {
+            case LobbyState.Wait:
                 return <WaitRoom />
-            case 'play':
+            case LobbyState.Play:
+            case LobbyState.Reveal:
                 return <PlayRoom />
             default:
                 return <CreateRoom />
@@ -30,8 +30,8 @@ export default function Home() {
     }
 
     return (
-        <div className='w-full h-full pr-64 pl-64'>
-            {render(gameContext.gameState.stage)}
+        <div className='ml-64 md:ml-32 sm:ml-0 mr-64 md:mr-32 sm:mr-0 mt-4'>
+            {render(gameContext.gameState.lobbyState)}
         </div>
     )
 }

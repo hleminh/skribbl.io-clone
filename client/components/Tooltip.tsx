@@ -20,7 +20,7 @@ export default function Tooltip(props: { children: any, text: string }) {
             onMouseLeave={hideTooltip}
         >
             <div
-                className='bg-white inline-block absolute left-0 right-0 text-center rounded pointer-events-none'
+                className='bg-white inline-block absolute left-0 right-0 text-center pointer-events-none'
                 style={{
                     width: '100%',
                     bottom: '105%',

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
@@ -23,101 +25,283 @@ var upgrader = websocket.Upgrader{
 var WordBank = []string{"test1", "test2", "test3"}
 
 type Content struct {
-	SenderId  int    `json:"senderId"`
-	Directive string `json:"directive"`
-	Data      string `json:"data,omitempty"`
+	SenderID int    `json:"senderId,omitempty"`
+	Type     string `json:"type"`
+	Data     string `json:"data,omitempty"`
 }
 
 type IncomingMessage struct {
 	sender  *Client
-	content Content
+	content *Content
 }
 
 type OutgoingMessage = Content
 
 type Player struct {
-	Id     int    `json:"id"`
-	Name   string `json:"name"`
-	IsHost bool   `json:"isHost"`
-	IsYou  bool   `json:"isYou"`
+	ID         int    `json:"id"`
+	Name       string `json:"name"`
+	IsHost     bool   `json:"isHost"`
+	IsYou      bool   `json:"isYou"`
+	IsDrawing  bool   `json:"isDrawing"`
+	IsGuessed  bool   `json:"isGuessed"`
+	TurnScore  int    `json:"turnScore"`
+	RoundScore int    `json:"roundScore"`
+	GameScore  int    `json:"gameScore"`
 }
 
 // external data that will be exposed to clients
 type GameState struct {
-	Word     string   `json:"word"`
-	RoomID   string   `json:"roomID"`
-	Rounds   int      `json:"rounds"`
-	DrawTime int      `json:"drawTime"`
-	Stage    string   `json:"stage"`
-	Players  []Player `json:"players"`
+	Word         string   `json:"word"`
+	LobbyID      string   `json:"lobbyID"`
+	Rounds       int      `json:"rounds"`
+	DrawTime     int      `json:"drawTime"`
+	LobbyState   string   `json:"lobbyState"`
+	RoundState   string   `json:"roundState"`
+	Players      []Player `json:"players"`
+	CurrentRound int      `json:"currentRound"`
 }
 
 // internal data not exposed to clients
 type Hub struct {
-	id         string
-	hostAddr   string
-	rounds     int
-	drawTime   int
-	stage      string
-	word       string
-	clients    map[*Client]bool
-	broadcast  chan IncomingMessage
-	register   chan *Client
-	unregister chan *Client
+	id           string
+	rounds       int
+	drawTime     int
+	lobbyState   string
+	roundState   string
+	word         string
+	revealReason string
+	currentRound int
+	clients      map[*Client]bool
+	broadcast    chan IncomingMessage
+	register     chan *Client
+	unregister   chan *Client
+	timer        *CustomTimer
 }
 
 type Client struct {
-	id     int
-	name   string
-	hub    *Hub
-	conn   *websocket.Conn
-	send   chan OutgoingMessage
-	isHost bool
+	id         int
+	name       string
+	hub        *Hub
+	conn       *websocket.Conn
+	send       chan OutgoingMessage
+	isHost     bool
+	isDrawing  bool
+	isGuessed  bool
+	hasDrawn   bool
+	turnScore  int
+	roundScore int
+	gameScore  int
 }
 
-func (client *Client) toPlayer() Player {
-	return Player{
-		Id:     client.id,
-		Name:   client.name,
-		IsHost: client.isHost,
-		IsYou:  false,
-	}
+type CustomTimer struct {
+	*time.Timer
+	abort chan bool
 }
 
-func createOutgoingMessage(senderId int, directive string, data string) OutgoingMessage {
-	return OutgoingMessage{
-		SenderId:  senderId,
-		Directive: directive,
-		Data:      data,
-	}
+type PlayerScore struct {
+	Name       string `json:"name"`
+	IsYou      bool   `json:"isYou"`
+	TurnScore  int    `json:"turnScore"`
+	RoundScore int    `json:"roundScore"`
+	GameScore  int    `json:"gameScore"`
 }
 
-func createIncomingMessage(sender *Client, directive string, data string) IncomingMessage {
-	return IncomingMessage{
-		sender: sender,
-		content: Content{
-			Directive: directive,
-			Data:      data,
-		},
-	}
+type Summary struct {
+	Word   string        `json:"word"`
+	Reason string        `json:"reason"`
+	Scores []PlayerScore `json:"scores"`
 }
 
 type CreateRoomRequest struct {
 	PlayerName string `json:"playerName"`
 }
 
-func newHub(hostAddr string) *Hub {
-	return &Hub{
-		hostAddr:   hostAddr,
-		rounds:     3,
-		drawTime:   60,
-		stage:      "wait",
-		word:       "",
-		clients:    make(map[*Client]bool),
-		broadcast:  make(chan IncomingMessage, 1),
-		register:   make(chan *Client),
-		unregister: make(chan *Client),
+func newCustomTimer(seconds int) *CustomTimer {
+	return &CustomTimer{
+		time.NewTimer(time.Duration(seconds) * time.Second),
+		make(chan bool),
 	}
+}
+
+func (client *Client) toPlayer() Player {
+	return Player{
+		ID:         client.id,
+		Name:       client.name,
+		IsHost:     client.isHost,
+		IsYou:      false,
+		IsDrawing:  client.isDrawing,
+		IsGuessed:  client.isGuessed,
+		TurnScore:  client.turnScore,
+		RoundScore: client.roundScore,
+		GameScore:  client.gameScore,
+	}
+}
+
+func createOutgoingMessage(sender *Client, messageType string, data string) OutgoingMessage {
+	var senderID int
+	if sender == nil {
+		senderID = 0
+	} else {
+		senderID = sender.id
+	}
+	return OutgoingMessage{
+		SenderID: senderID,
+		Type:     messageType,
+		Data:     data,
+	}
+}
+
+func createIncomingMessage(sender *Client, messageType string, data string) IncomingMessage {
+	return IncomingMessage{
+		sender: sender,
+		content: &Content{
+			Type: messageType,
+			Data: data,
+		},
+	}
+}
+
+func newHub() *Hub {
+	return &Hub{
+		rounds:       3,
+		drawTime:     60,
+		lobbyState:   "wait",
+		roundState:   "unset",
+		word:         "",
+		currentRound: 1,
+		clients:      make(map[*Client]bool),
+		broadcast:    make(chan IncomingMessage, 5),
+		register:     make(chan *Client),
+		unregister:   make(chan *Client),
+	}
+}
+
+func (h *Hub) start() {
+	h.roundState = "ongoing"
+	h.broadcast <- createIncomingMessage(nil, "roundOngoing", "")
+	h.timer = newCustomTimer(h.drawTime)
+	h.revealReason = "timeOut"
+	select {
+	case <-h.timer.C:
+	case <-h.timer.abort:
+		h.revealReason = "allGuessed"
+		h.timer.Stop()
+	}
+	if len(h.getDrawnClients()) == len(h.clients) {
+		if h.currentRound < h.rounds {
+			h.broadcast <- createIncomingMessage(nil, "roundReveal", "")
+		} else {
+			h.broadcast <- createIncomingMessage(nil, "lobbyReveal", "")
+		}
+	} else {
+		h.broadcast <- createIncomingMessage(nil, "roundTurnReveal", "")
+	}
+}
+
+func (h *Hub) getHost() *Client {
+	for client := range h.clients {
+		if client.isHost {
+			return client
+		}
+	}
+	return nil
+}
+
+func (h *Hub) getDrawingClient() *Client {
+	for client := range h.clients {
+		if client.isDrawing {
+			return client
+		}
+	}
+	return nil
+}
+
+func (h *Hub) getPlayers(requester *Client) []Player {
+	players := make([]Player, 0)
+	for client := range h.clients {
+		var isYou bool
+		if requester == nil {
+			isYou = false
+		} else {
+			isYou = client.conn.RemoteAddr().String() == requester.conn.RemoteAddr().String()
+		}
+		players = append(players, Player{
+			ID:         client.id,
+			Name:       client.name,
+			IsHost:     client.isHost,
+			IsYou:      isYou,
+			IsDrawing:  client.isDrawing,
+			TurnScore:  client.turnScore,
+			RoundScore: client.roundScore,
+			GameScore:  client.gameScore,
+		})
+	}
+	return players
+}
+
+func (h *Hub) getGuessedClients() []*Client {
+	clients := make([]*Client, 0)
+	for client := range h.clients {
+		if client.isGuessed {
+			clients = append(clients, client)
+		}
+	}
+	return clients
+}
+
+func (h *Hub) getClientById(id int) *Client {
+	for client := range h.clients {
+		if client.id == id {
+			return client
+		}
+	}
+	return nil
+}
+
+func (h *Hub) getDrawnClients() []*Client {
+	clients := make([]*Client, 0)
+	for client := range h.clients {
+		if client.hasDrawn {
+			clients = append(clients, client)
+		}
+	}
+	return clients
+}
+
+func (h *Hub) resetDrawnClients() {
+	for client := range h.clients {
+		client.hasDrawn = false
+	}
+}
+
+func (h *Hub) getRandomNotDrawnClients() *Client {
+	// every iteration of map is random so the result is also random
+	for client := range h.clients {
+		if !client.hasDrawn {
+			return client
+		}
+	}
+	return nil
+}
+
+func (h *Hub) getPlayerScores(requester *Client) []PlayerScore {
+	playerScores := make([]PlayerScore, 0)
+	for client := range h.clients {
+		var isYou bool
+		if requester == nil {
+			isYou = false
+		} else {
+			isYou = client.conn.RemoteAddr().String() == requester.conn.RemoteAddr().String()
+		}
+		playerScores = append(playerScores, PlayerScore{
+			Name:       client.name,
+			IsYou:      isYou,
+			TurnScore:  client.turnScore,
+			RoundScore: client.roundScore,
+			GameScore:  client.gameScore,
+		})
+	}
+	return playerScores
 }
 
 func (h *Hub) run() {
@@ -125,49 +309,50 @@ func (h *Hub) run() {
 		select {
 		case client := <-h.register:
 			h.clients[client] = true
-			playerData, _ := json.Marshal(client.toPlayer())
-			h.broadcast <- createIncomingMessage(client, "playerJoin", string(playerData))
+			player, _ := json.Marshal(client.toPlayer())
+			h.broadcast <- createIncomingMessage(nil, "playerJoin", string(player))
+			if h.lobbyState == "play" {
+				h.broadcast <- createIncomingMessage(nil, "info", fmt.Sprintf("%s joined the game", client.name))
+			}
 		case client := <-h.unregister:
 			if _, ok := h.clients[client]; ok {
-				playerId, _ := json.Marshal(client.toPlayer().Id)
-				h.broadcast <- createIncomingMessage(client, "playerLeave", string(playerId))
+				h.broadcast <- createIncomingMessage(nil, "playerLeave", fmt.Sprint(client.id))
+				if h.lobbyState == "play" {
+					h.broadcast <- createIncomingMessage(nil, "alert", fmt.Sprintf("%s left the game", client.name))
+				}
 				delete(h.clients, client)
 				close(client.send)
 			}
 		case message := <-h.broadcast:
-			switch message.content.Directive {
+			switch message.content.Type {
 			case "getGameState":
-				players := make([]Player, 0)
-				for client := range h.clients {
-					players = append(players, Player{
-						Id:     client.id,
-						Name:   client.name,
-						IsHost: client.isHost,
-						IsYou:  client.conn.RemoteAddr().String() == message.sender.conn.RemoteAddr().String(),
-					})
-				}
 				gameState := GameState{
-					RoomID:   h.id,
-					Rounds:   h.rounds,
-					DrawTime: h.drawTime,
-					Stage:    h.stage,
-					Players:  players,
+					LobbyID:      h.id,
+					Rounds:       h.rounds,
+					DrawTime:     h.drawTime,
+					LobbyState:   h.lobbyState,
+					RoundState:   h.roundState,
+					Players:      h.getPlayers(message.sender),
+					CurrentRound: h.currentRound,
 				}
 				gameStateJSON, err := json.Marshal(gameState)
 				if err != nil {
 					fmt.Println(err)
 				}
-				message.sender.send <- createOutgoingMessage(message.sender.id, message.content.Directive, string(gameStateJSON))
+				message.sender.send <- createOutgoingMessage(nil, "setGameState", string(gameStateJSON))
 				continue
-			case "getWords":
+			case "getWordChoices":
+				if !message.sender.isDrawing {
+					continue
+				}
 				wordBankJSON, err := json.Marshal(WordBank)
 				if err != nil {
 					fmt.Println(err)
 				}
-				message.sender.send <- createOutgoingMessage(message.sender.id, message.content.Directive, string(wordBankJSON))
+				message.sender.send <- createOutgoingMessage(nil, "setWordChoices", string(wordBankJSON))
 				continue
-			case "setWord":
-				if !message.sender.isHost {
+			case "chooseWord":
+				if !message.sender.isDrawing {
 					continue
 				}
 				word := string(message.content.Data)
@@ -176,7 +361,10 @@ func (h *Hub) run() {
 				for i := 0; i < len(word); i++ {
 					obfuscatedWord += "_ "
 				}
-				message.content.Data = string(obfuscatedWord)
+				obfuscatedWord = strings.TrimSpace(obfuscatedWord)
+				message.content.Type = "setWord"
+				message.content.Data = obfuscatedWord
+				go h.start()
 			case "setRounds":
 				if !message.sender.isHost {
 					continue
@@ -189,19 +377,103 @@ func (h *Hub) run() {
 				}
 				drawTime, _ := strconv.Atoi(message.content.Data)
 				h.drawTime = drawTime
-			case "setStage":
-				if !message.sender.isHost {
+			case "startGame":
+				h.broadcast <- createIncomingMessage(nil, "lobbyPlay", "")
+				continue
+			case "lobbyWait":
+				h.lobbyState = "wait"
+			case "lobbyPlay":
+				h.lobbyState = "play"
+				clientToDraw := h.getRandomNotDrawnClients()
+				fmt.Println(clientToDraw)
+				h.broadcast <- createIncomingMessage(nil, "playerDrawing", fmt.Sprint(clientToDraw.id))
+				h.broadcast <- createIncomingMessage(nil, "roundChooseWord", "")
+			case "roundChooseWord":
+				h.roundState = "chooseWord"
+			case "roundReveal":
+				h.roundState = "reveal"
+			case "roundTurnReveal":
+				h.roundState = "turnReveal"
+				h.broadcast <- createIncomingMessage(nil, "info", fmt.Sprintf("The word was '%s'", h.word))
+			case "startNextRound":
+				h.currentRound += 1
+				if h.currentRound > h.rounds {
+					h.broadcast <- createIncomingMessage(nil, "lobbyReveal", "")
 					continue
 				}
-				h.stage = string(message.content.Data)
+				h.roundState = "chooseWord"
+				h.nextRound()
+				continue
+			case "startNextTurn":
+				if h.currentRound > h.rounds {
+					h.broadcast <- createIncomingMessage(nil, "lobbyReveal", "")
+					continue
+				}
+				h.roundState = "chooseWord"
+				h.nextTurn()
+				continue
+			case "chat":
+				if message.content.Data == "" {
+					continue
+				}
+				if message.content.Data == h.word && !message.sender.isDrawing && !message.sender.isGuessed {
+					message.sender.turnScore += 500
+					message.sender.roundScore += message.sender.turnScore
+					message.sender.gameScore += message.sender.roundScore
+					message.sender.isGuessed = true
+					drawer := h.getDrawingClient()
+					drawer.turnScore += 100
+					drawer.roundScore += drawer.turnScore
+					drawer.gameScore += drawer.roundScore
+					h.broadcast <- createIncomingMessage(nil, "playerGuessed", fmt.Sprint(message.sender.id))
+					message.sender.send <- createOutgoingMessage(nil, "wordReveal", h.word)
+					if len(h.getGuessedClients()) == len(h.clients)-1 {
+						h.timer.abort <- true
+					}
+					continue
+				}
+				if message.sender.isGuessed || message.sender.isDrawing {
+					message.content.Type = "guessedChat"
+				}
+			case "playerGuessed":
+				playerId, err := strconv.Atoi(message.content.Data)
+				if err != nil {
+					fmt.Println(err)
+				}
+				client := h.getClientById(playerId)
+				h.broadcast <- createIncomingMessage(nil, "notify", fmt.Sprintf("%s guessed the word!", client.name))
+			case "playerDrawing":
+				playerId, err := strconv.Atoi(message.content.Data)
+				if err != nil {
+					fmt.Println(err)
+				}
+				client := h.getClientById(playerId)
+				client.isDrawing = true
+				client.hasDrawn = true
+				h.broadcast <- createIncomingMessage(nil, "info", fmt.Sprintf("%s is drawing!", client.name))
+			case "getSummary":
+				data := Summary{
+					Word:   h.word,
+					Reason: h.revealReason,
+					Scores: h.getPlayerScores(message.sender),
+				}
+				dataJSON, err := json.Marshal(data)
+				if err != nil {
+					fmt.Println(err)
+				}
+				message.sender.send <- createOutgoingMessage(nil, "setSummary", string(dataJSON))
+				continue
 			}
 			for client := range h.clients {
 				if client != message.sender {
+					if message.content.Type == "guessedChat" && !client.isGuessed && !client.isDrawing {
+						continue
+					}
 					select {
-					case client.send <- createOutgoingMessage(message.sender.id, message.content.Directive, message.content.Data):
+					case client.send <- createOutgoingMessage(message.sender, message.content.Type, message.content.Data):
 					default:
-						delete(h.clients, client)
-						close(client.send)
+						// delete(h.clients, client)
+						// close(client.send)
 					}
 				}
 			}
@@ -209,22 +481,105 @@ func (h *Hub) run() {
 	}
 }
 
+func (h *Hub) nextRound() {
+	h.resetDrawnClients()
+	clientToDrawn := h.getRandomNotDrawnClients()
+	clientToDrawn.isDrawing = true
+	clientToDrawn.hasDrawn = true
+	for client := range h.clients {
+		client.isGuessed = false
+		client.hasDrawn = client.id == clientToDrawn.id
+		client.isDrawing = client.id == clientToDrawn.id
+		client.turnScore = 0
+		client.roundScore = 0
+		players := make([]Player, 0)
+		for inner := range h.clients {
+			players = append(players, Player{
+				ID:         inner.id,
+				Name:       inner.name,
+				IsHost:     inner.isHost,
+				IsGuessed:  false,
+				IsYou:      inner.id == client.id,
+				IsDrawing:  inner.id == clientToDrawn.id,
+				TurnScore:  0,
+				RoundScore: 0,
+				GameScore:  inner.gameScore,
+			})
+		}
+		gameState := GameState{
+			LobbyID:      h.id,
+			Word:         "",
+			Rounds:       h.rounds,
+			DrawTime:     h.drawTime,
+			LobbyState:   h.lobbyState,
+			RoundState:   h.roundState,
+			Players:      players,
+			CurrentRound: h.currentRound,
+		}
+		gameStateJSON, err := json.Marshal(gameState)
+		if err != nil {
+			fmt.Println(err)
+		}
+		client.send <- createOutgoingMessage(nil, "setGameState", string(gameStateJSON))
+	}
+	h.broadcast <- createIncomingMessage(nil, "info", fmt.Sprintf("%s is drawing!", clientToDrawn.name))
+}
+
+func (h *Hub) nextTurn() {
+	clientToDrawn := h.getRandomNotDrawnClients()
+	clientToDrawn.isDrawing = true
+	clientToDrawn.hasDrawn = true
+	for client := range h.clients {
+		client.isGuessed = false
+		if client.id != clientToDrawn.id {
+			client.isDrawing = false
+		}
+		client.turnScore = 0
+		players := make([]Player, 0)
+		for inner := range h.clients {
+			players = append(players, Player{
+				ID:         inner.id,
+				Name:       inner.name,
+				IsHost:     inner.isHost,
+				IsGuessed:  false,
+				IsYou:      inner.id == client.id,
+				IsDrawing:  inner.id == clientToDrawn.id,
+				TurnScore:  0,
+				RoundScore: inner.roundScore,
+				GameScore:  inner.gameScore,
+			})
+		}
+		gameState := GameState{
+			LobbyID:      h.id,
+			Word:         "",
+			Rounds:       h.rounds,
+			DrawTime:     h.drawTime,
+			LobbyState:   h.lobbyState,
+			RoundState:   h.roundState,
+			Players:      players,
+			CurrentRound: h.currentRound,
+		}
+		gameStateJSON, err := json.Marshal(gameState)
+		if err != nil {
+			fmt.Println(err)
+		}
+		client.send <- createOutgoingMessage(nil, "setGameState", string(gameStateJSON))
+	}
+	h.broadcast <- createIncomingMessage(nil, "info", fmt.Sprintf("%s is drawing!", clientToDrawn.name))
+}
+
 // read message from ws connection and write to hub
 func (c *Client) wsReadHandler() {
 	for {
-		_, message, err := c.conn.ReadMessage()
+		var parsedMessage OutgoingMessage
+		err := c.conn.ReadJSON(&parsedMessage)
 		if err != nil {
 			fmt.Println(err)
 			c.hub.unregister <- c
 			return
 		}
-		var parsedMessage OutgoingMessage
-		err = json.Unmarshal(message, &parsedMessage)
 		fmt.Println(parsedMessage)
-		if err != nil {
-			fmt.Println(err)
-		}
-		c.hub.broadcast <- IncomingMessage{sender: c, content: parsedMessage}
+		c.hub.broadcast <- IncomingMessage{sender: c, content: &parsedMessage}
 	}
 }
 
@@ -250,12 +605,15 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 		fmt.Println(err)
 	}
 	client := &Client{
-		id:     len(h.clients),
-		name:   playerName,
-		hub:    h,
-		conn:   conn,
-		send:   make(chan OutgoingMessage),
-		isHost: len(h.clients) == 0,
+		id:        len(h.clients) + 1, // id = 0 is reserved for the hub
+		name:      playerName,
+		hub:       h,
+		conn:      conn,
+		send:      make(chan OutgoingMessage, 5),
+		isDrawing: false,
+		isGuessed: false,
+		hasDrawn:  false,
+		isHost:    len(h.clients) == 0,
 	}
 	h.register <- client
 	go client.wsReadHandler()
@@ -269,7 +627,7 @@ func main() {
 	serveMux := mux.NewRouter()
 
 	serveMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		h := newHub(r.RemoteAddr)
+		h := newHub()
 		go h.run()
 		id := strconv.Itoa(len(hubs))
 		hubs[id] = h

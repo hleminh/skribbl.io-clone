@@ -1,43 +1,56 @@
-import React, { FormEventHandler, useContext, useEffect, useRef, useState } from 'react';
+import React, { FormEventHandler, KeyboardEventHandler, useContext, useEffect, useRef, useState } from 'react';
 import { GameContext } from '../pages/_app';
 import ChatMessage from './ChatMessage';
 import { get } from './WebSocket';
+import { MessageType } from '../models/MessageType';
+import { ChatMessage as ChatMessageI } from '../models/ChatMessage';
+import { Player } from '../models/Player';
+import { ChatMessageType } from '../models/ChatMessageType';
 
 const ws = get();
 
 export default function Chat(props: { height: number }) {
+    const gameContext = useContext(GameContext);
 
-    const [messages, setMessages] = useState<string[]>([]);
-
-    const messagesList = messages.map((msg, index) => <ChatMessage key={index}>{msg}</ChatMessage>)
+    const messagesList = gameContext.gameState.chatMessages.map((msg: ChatMessageI, index: number) => <ChatMessage index={index} key={index} message={msg} />)
 
     const textAreaRef = useRef<HTMLTextAreaElement>(null);
 
     const messagesListRef = useRef<HTMLDivElement>(null);
 
-    const gameContext = useContext(GameContext);
-
-    const gameStateRef = useRef<any>();
-
-    const player = gameContext.gameState.players.find((player: any) => player.isYou);
-
-    useEffect(() => {
-        gameStateRef.current = gameContext.gameState;
-    }, [gameContext.gameState]);
+    const player: Player = gameContext.gameState.players.find((player: any) => player.isYou);
 
     const sendMessage: FormEventHandler = (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         const newMessage = textAreaRef.current!.value;
         if (textAreaRef.current!.value) {
-            setMessages(messages => [
-                ...messages,
-                `${player.name} (You): ${newMessage}`
-            ]);
+            gameContext.updateGameState({
+                chatMessages: gameContext.gameState.chatMessages.concat([
+                    {
+                        senderId: player.id,
+                        senderName: player.name + ' (You)',
+                        content: newMessage,
+                        type: player.isGuessed || player.isDrawing ? ChatMessageType.GuessedChat : ChatMessageType.Chat
+                    }
+                ])
+            });
             ws!.send(JSON.stringify({
-                directive: 'chat',
+                type: MessageType.Chat,
                 data: newMessage
             }));
             textAreaRef.current!.value = '';
+            textAreaRef.current!.focus();
+        }
+    }
+
+    const submitHandler: FormEventHandler = (e: React.FormEvent<HTMLFormElement>) => {
+        e.preventDefault();
+        sendMessage(e);
+    }
+
+    const keyPressHandler: KeyboardEventHandler = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        if (e.key === 'Enter') {
+            sendMessage(e);
         }
     }
 
@@ -45,41 +58,28 @@ export default function Chat(props: { height: number }) {
 
     useEffect(() => {
         console.log('chat useEffect');
-
-        ws!.addEventListener('message', (event) => {
-            const msg = JSON.parse(event.data);
-
-            switch(msg.directive) {
-                case 'chat':
-                    const sender = gameStateRef.current.players.find((player: any) => player.id === msg.senderId);
-                    const senderName = `${sender.name}${sender.isYou ? ' (You)' : ''}`;
-                    setMessages((messages: any) => [
-                        ...messages,
-                        `${senderName}: ${msg.data}`
-                    ]);
-                    break;
-            }
-        });
     }, []);
 
     useEffect(() => {
         messagesListRef.current!.scrollTop = messagesListRef.current!.scrollHeight;
-    }, [messages]);
+    }, [gameContext.gameState.chatMessages]);
 
     return (
         <div
-            className='bg-gray-100 border border-black flex flex-col flex-auto rounded p-2'
+            className='border-gray-300 border-2 border-opacity-25 flex box-content shadow-lg'
             style={{
                 height: props.height
             }}
         >
-            <div className='flex flex-col flex-auto overflow-y-auto mb-2 pb-4' ref={messagesListRef}>
-                {messagesList}
+            <div className='flex flex-col bg-white p-2 flex-auto min-w-0'>
+                <div className='flex flex-col overflow-y-auto mb-2 pb-4 flex-1' ref={messagesListRef}>
+                    {messagesList}
+                </div>
+                <form className='flex flex-none min-w-0' onSubmit={submitHandler}>
+                    <textarea ref={textAreaRef} onKeyPress={keyPressHandler} placeholder='Type your guess here...' className='border border-black p-2 resize-none flex-auto' rows={2} />
+                    <button className='bg-gray-200 min-w-0 overflow-hidden overflow-ellipsis hover:bg-gray-100 p-2 font-medium' type='submit'>Send</button>
+                </form>
             </div>
-            <form className='flex flex-none' onSubmit={sendMessage}>
-                <textarea ref={textAreaRef} placeholder='Type your answer here' className='border rounded p-2 flex-none resize-none' rows={2} />
-                <button className='bg-gray-200 hover:bg-gray-100 p-2 rounded' type='submit'>Send</button>
-            </form>
         </div>
     )
 }

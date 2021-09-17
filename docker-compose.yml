@@ -1,0 +1,11 @@
+version: '3'
+services:
+  nextjs:
+    build: ./client
+  go:
+    build: ./server
+  nginx:
+    build: ./nginx
+    ports:
+      - 80:80
+      - 6969:6969

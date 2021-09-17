@@ -4,8 +4,7 @@ import { NextRouter, useRouter } from 'next/router';
 import { get } from '../components/WebSocket';
 import { GetServerSideProps, GetServerSidePropsContext } from 'next';
 import { GameContext } from '../pages/_app';
-
-// import styles from '../styles/Home.module.css';
+import { LobbyState } from '../models/LobbyState';
 
 const PlayRoom = dynamic(
     () => import('../components/PlayRoom'),
@@ -33,11 +32,12 @@ export default function Room() {
 
     console.log('room render');
 
-    const render = (stage: string) => {
-        switch (stage) {
-            case 'wait':
+    const render = (lobbyState: LobbyState) => {
+        switch (lobbyState) {
+            case LobbyState.Wait:
                 return <WaitRoom /> 
-            case 'play':
+            case LobbyState.Play:
+            case LobbyState.Reveal:
                 return <PlayRoom />
             default:
                 return <JoinRoom roomId={roomId}/>
@@ -51,14 +51,14 @@ export default function Room() {
     }, []);
 
     return (
-        <div className='w-full h-full pr-64 pl-64'>
-            {render(gameContext.gameState.stage)}
+        <div className='ml-64 md:ml-32 sm:ml-0 mr-64 md:mr-32 sm:mr-0 mt-4'>
+            {render(gameContext.gameState.lobbyState)}
         </div>
     )
 }
 
 export const getServerSideProps: GetServerSideProps = async (context: GetServerSidePropsContext) => {
-    const res = await fetch(`http://localhost:6969/${context.params!.rid}`, {
+    const res = await fetch(`http://${process.env.NEXT_PUBLIC_REACT_APP_API_BASE_URL}/${context.params!.rid}`, {
         method: 'OPTIONS',
     });
 

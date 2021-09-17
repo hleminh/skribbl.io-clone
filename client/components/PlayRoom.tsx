@@ -1,30 +1,49 @@
-import React, { useContext } from 'react';
+import React, { useContext, useEffect, useRef } from 'react';
 import Timer from '../components/Timer';
 import Painter from '../components/Painter';
 import Chat from '../components/Chat';
 import PlayersList from './PlayersList';
+import GameInfo from './GameInfo';
+
 import { GameContext } from '../pages/_app';
+import { get } from './WebSocket';
+import { MessageType } from '../models/MessageType';
+import { Player } from '../models/Player';
+
+const ws = get();
 
 export default function PlayRoom() {
 
     const gameContext = useContext(GameContext);
 
+    const gameStateRef = useRef<any>(null);
+
+    useEffect(() => {
+        gameStateRef.current = gameContext.gameState;
+    }, [gameContext.gameState]);
+
     return (
-        <div className='flex'>
-            <div className='flex flex-col flex-auto items-center m-4'>
-                <PlayersList />
+        <div
+            className='grid gap-2'
+            style={{
+                gridTemplateRows: `max-content max-content max-content`
+            }}
+        >
+            <div>
+                <Timer time={gameContext.gameState.drawTime} />
             </div>
-            <div className='flex flex-col flex-auto items-center m-4'>
-                <Timer time={60} width={800} />
-                <div className='border border-black select-none text-center mb-2' style={{
-                    width: 800
-                }}>
-                    {gameContext.gameState.word === '' ? <>&nbsp;</> : gameContext.gameState.word}
-                </div>
+            <div>
+                <GameInfo />
+            </div>
+            <div
+                className='grid gap-2'
+                style={{
+                    gridTemplateColumns: `minmax(0, max-content) max-content minmax(0, 1fr)`
+                }}
+            >
+                <PlayersList maxHeight={500}/>
                 <Painter height={500} width={800} />
-            </div>
-            <div className='flex flex-col flex-auto items-center m-4'>
-                <Chat height={500}></Chat>
+                <Chat height={500} />
             </div>
         </div>
     )

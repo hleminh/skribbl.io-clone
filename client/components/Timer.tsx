@@ -1,13 +1,23 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useContext, useEffect, useRef, useState } from 'react';
 import { RiTimerLine } from 'react-icons/ri';
+import { Message } from '../models/Message';
+import { RoundState } from '../models/RoundState';
+import { GameContext } from '../pages/_app';
+import { get } from './WebSocket';
 
-export default function Timer(props: { time: number, width: number }) {
-    const timerIconRef = useRef<HTMLDivElement>(null);
-    const timerProgressRef = useRef<HTMLDivElement>(null);
+const ws = get();
 
+export default function Timer(props: { time: number }) {
     const [time, setTime] = useState(props.time);
 
+    const gameContext = useContext(GameContext);
+    const timeRef = useRef<number>(time);
+
     console.log('timer render');
+
+    useEffect(() => {
+        timeRef.current = time;
+    }, [time]);
 
     useEffect(() => {
         console.log('timer useEffect');
@@ -15,32 +25,36 @@ export default function Timer(props: { time: number, width: number }) {
     }, [])
 
     useEffect(() => {
-        const timer = setInterval(() => {
-            setTime(time - 1);
-            if (time <= 0) {
+        if (gameContext.gameState.roundState == RoundState.Ongoing) {
+            const timer = setInterval(() => {
+                setTime(time => time - 1);
+                if (timeRef.current <= 0) {
+                    setTime(props.time);
+                }
+            }, 1000);
+            return () => {
+                clearInterval(timer);
                 setTime(props.time);
             }
-        }, 1000);
-        return () => clearInterval(timer);
-    }, [time]);
+        }
+    }, [gameContext.gameState.roundState]);
 
     return (
-        <div className='flex mb-2' style={{ width: props.width }}>
-            <div className='flex-none flex items-center pr-2 pl-2 border border-black rounded-tl-full rounded-bl-full' ref={timerIconRef}>
+        <div className='flex border-gray-300 border-2 box-content border-opacity-25 shadow-lg'>
+            <div className='bg-gray-200 flex-none flex items-center pr-2 pl-2 border-gray-200'>
                 <RiTimerLine />
             </div>
-            <div className='flex-auto bg-gray-100 border border-box border-l-0 border-black rounded-tr-full rounded-br-full overflow-hidden'>
-                <div 
-                    className='text-right mr-2 text-white' 
-                    style={{ 
-                        background: time > 30 ? 'green' : ( time > 10 ? 'orange' : 'red'), 
-                        width: timerIconRef.current ? time * (props.width - timerIconRef.current!.offsetWidth) / props.time : '100%', 
+            <div className='flex-auto bg-white overflow-hidden'>
+                <div
+                    className='border-2 border-white text-right text-white pr-2'
+                    style={{
+                        background: time > 30 ? 'green' : (time > 10 ? 'orange' : 'red'),
+                        width: `${100 - 100 * (props.time - time) / (props.time) }%`,
                         transition: 'width 1s linear, background-color 1s linear',
                         height: '100%'
-                    }} 
-                    ref={timerProgressRef}
+                    }}
                 >
-                    <div className='mr-2 select-none'>{time}</div>
+                    <div className='select-none font-medium'>{time}</div>
                 </div>
             </div>
         </div>
