@@ -4,10 +4,7 @@ import { BsFillPersonFill } from 'react-icons/bs';
 import { RiVipCrownFill } from 'react-icons/ri';
 import { get } from '../components/WebSocket';
 import { MessageType } from '../models/MessageType';
-import { Message } from '../models/Message';
 import { GameContext } from '../pages/_app';
-import { LobbyState } from '../models/LobbyState';
-import { Player } from '../models/Player';
 
 const ws = get();
 

@@ -1,4 +1,5 @@
 client/node_modules
 client/.next
+client/.env.local
 server/tmp/*
 .git/
