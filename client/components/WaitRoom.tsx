@@ -22,6 +22,8 @@ export default function WaitRoom() {
 
     const settingsRef = React.useRef<HTMLDivElement>(null);
 
+    const roomURLRef = React.useRef<HTMLInputElement>(null);
+
     const isNotHost = !gameContext.gameState.players.find((player: any) => player.isYou).isHost;
 
     const url = `${window.location.origin}/${gameContext.gameState.lobbyID}`
@@ -61,7 +63,9 @@ export default function WaitRoom() {
     }
 
     const copyURL: MouseEventHandler = (e: React.MouseEvent<HTMLButtonElement, MouseEvent>) => {
-        navigator.clipboard.writeText(url);
+        roomURLRef.current!.select();
+        document.execCommand('copy');
+        console.log(roomURLRef.current!.defaultValue);
     }
 
     const showURL: MouseEventHandler = (e: React.MouseEvent<HTMLInputElement, MouseEvent>) => {
@@ -83,6 +87,7 @@ export default function WaitRoom() {
 
     return (
         <div className='absolute top-1 right-1 bottom-1 left-1 flex items-center justify-center backdrop-filter backdrop-blur-sm'>
+            <input className='absolute top-0 left-0 opacity-0 pointer-events-none' defaultValue={url} ref={roomURLRef}/>
             <div className='flex flex-col'>
                 <div className='flex mb-4'>
                     <div className='flex flex-col'>
