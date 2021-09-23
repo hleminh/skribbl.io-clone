@@ -34,7 +34,7 @@ export default function WoodChooser() {
             }));
         }
         return () => ws.removeEventListener('message', eventHandler);
-    }, []);
+    }, [player.isDrawing]);
 
     const chooseWord: MouseEventHandler = (e: React.MouseEvent<HTMLButtonElement, MouseEvent>) => {
         const word = (e.currentTarget.value);
@@ -61,7 +61,7 @@ export default function WoodChooser() {
                         </div>
                     </>
                 }
-                {!player.isDrawing &&
+                {!player.isDrawing && drawer &&
                     <>
                         <div className='flex justify-around bg-white p-2'>
                             {`${drawer.name} is choosing word`}

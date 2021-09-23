@@ -13,10 +13,12 @@ export default function JoinRoom({roomId}: {[key: string]: any}) {
 
         const playerName = nameInputRef.current!.value;
 
-        init(gameContext, roomId, playerName).then((event) => {
-            const msg: Message = JSON.parse(event.data);
-            gameContext.updateGameState(JSON.parse(msg.data!));
-        });
+        if (playerName !== '') {
+            init(gameContext, roomId, playerName).then((event) => {
+                const msg: Message = JSON.parse(event.data);
+                gameContext.updateGameState(JSON.parse(msg.data!));
+            });
+        }
     }
 
     return (

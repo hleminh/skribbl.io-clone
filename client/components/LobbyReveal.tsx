@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { MouseEventHandler, useEffect, useState } from 'react';
 import { Message } from '../models/Message';
 import { MessageType } from '../models/MessageType';
 import { get } from './WebSocket';
@@ -32,15 +32,17 @@ export default function LobbyReveal() {
         return () => ws.removeEventListener('message', eventListener)
     }, []);
 
-    console.log(summary);
-
     const playerScores = summary.scores.sort(sortByGameScore).map((score: PlayerScore, index: number) =>
-        <>
+        <React.Fragment key={index}>
             <div className='font-medium text-left'>#{index + 1}</div>
             <div className='font-medium text-left'>{score.name}{score.isYou ? ' (You)' : ''}</div>
             <div className='text-green-500 font-medium text-left'>{score.gameScore}</div>
-        </>
+        </React.Fragment>
     )
+
+    const quitGame: MouseEventHandler = (event: React.MouseEvent<HTMLButtonElement>) => {
+        ws.close();
+    }
 
     return (
         <div className='absolute top-0 right-0 bottom-0 left-0 bg-gray-100 flex items-center justify-center backdrop-filter backdrop-blur-sm'>
@@ -54,6 +56,9 @@ export default function LobbyReveal() {
                     }}
                 >
                     {playerScores}
+                </div>
+                <div className='flex items-center justify-center bg-white p-2'>
+                    <button className='bg-gray-200 hover:bg-gray-100 p-2 w-full' onClick={quitGame}>Quit / Back to Home</button>
                 </div>
             </div>
         </div>

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -11,18 +12,6 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 )
-
-var addr = ":6969"
-
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  0,
-	WriteBufferSize: 0,
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
-}
-
-var WordBank = []string{"test1", "test2", "test3"}
 
 type Content struct {
 	SenderID int    `json:"senderId,omitempty"`
@@ -96,6 +85,7 @@ type Client struct {
 type CustomTimer struct {
 	*time.Timer
 	abort chan bool
+	end   chan bool
 }
 
 type PlayerScore struct {
@@ -119,6 +109,7 @@ type CreateRoomRequest struct {
 func newCustomTimer(seconds int) *CustomTimer {
 	return &CustomTimer{
 		time.NewTimer(time.Duration(seconds) * time.Second),
+		make(chan bool),
 		make(chan bool),
 	}
 }
@@ -183,18 +174,22 @@ func (h *Hub) start() {
 	h.revealReason = "timeOut"
 	select {
 	case <-h.timer.C:
-	case <-h.timer.abort:
-		h.revealReason = "allGuessed"
+	case <-h.timer.end:
 		h.timer.Stop()
+	case <-h.timer.abort:
+		h.timer.Stop()
+		return
 	}
-	if len(h.getDrawnClients()) == len(h.clients) {
-		if h.currentRound < h.rounds {
-			h.broadcast <- createIncomingMessage(nil, "roundReveal", "")
+	if h.broadcast != nil {
+		if len(h.getDrawnClients()) == len(h.clients) {
+			if h.currentRound < h.rounds {
+				h.broadcast <- createIncomingMessage(nil, "roundReveal", "")
+			} else {
+				h.broadcast <- createIncomingMessage(nil, "lobbyReveal", "")
+			}
 		} else {
-			h.broadcast <- createIncomingMessage(nil, "lobbyReveal", "")
+			h.broadcast <- createIncomingMessage(nil, "roundTurnReveal", "")
 		}
-	} else {
-		h.broadcast <- createIncomingMessage(nil, "roundTurnReveal", "")
 	}
 }
 
@@ -322,6 +317,20 @@ func (h *Hub) run() {
 				}
 				delete(h.clients, client)
 				close(client.send)
+				if h.roundState != "wait" && h.roundState != "unset" {
+					if client.isDrawing && len(h.clients) > 1 {
+						h.revealReason = "drawerLeave"
+						if h.roundState == "ongoing" {
+							h.timer.abort <- true
+							h.broadcast <- createIncomingMessage(nil, "roundTurnReveal", "")
+						} else {
+							clientToDrawn := h.getRandomNotDrawnClients()
+							if clientToDrawn != nil {
+								h.broadcast <- createIncomingMessage(nil, "playerDrawing", fmt.Sprint(clientToDrawn.id))
+							}
+						}
+					}
+				}
 			}
 		case message := <-h.broadcast:
 			switch message.content.Type {
@@ -378,6 +387,9 @@ func (h *Hub) run() {
 				drawTime, _ := strconv.Atoi(message.content.Data)
 				h.drawTime = drawTime
 			case "startGame":
+				if !message.sender.isHost || len(h.clients) < 2 {
+					continue
+				}
 				h.broadcast <- createIncomingMessage(nil, "lobbyPlay", "")
 				continue
 			case "lobbyWait":
@@ -428,7 +440,8 @@ func (h *Hub) run() {
 					h.broadcast <- createIncomingMessage(nil, "playerGuessed", fmt.Sprint(message.sender.id))
 					message.sender.send <- createOutgoingMessage(nil, "wordReveal", h.word)
 					if len(h.getGuessedClients()) == len(h.clients)-1 {
-						h.timer.abort <- true
+						h.revealReason = "allGuessed"
+						h.timer.end <- true
 					}
 					continue
 				}
@@ -472,10 +485,31 @@ func (h *Hub) run() {
 					select {
 					case client.send <- createOutgoingMessage(message.sender, message.content.Type, message.content.Data):
 					default:
-						// delete(h.clients, client)
-						// close(client.send)
+						// 	delete(h.clients, client)
+						// 	close(client.send)
 					}
 				}
+			}
+			if ((len(h.clients) < 2 && h.roundState != "wait" && h.roundState != "unset") || h.getHost() == nil) && len(h.broadcast) == 0 {
+				fmt.Println("close hub")
+				if len(h.clients) < 2 {
+					h.revealReason = "notEnoughPlayers"
+				}
+				if h.getHost() == nil {
+					h.revealReason = "hostLeave"
+				}
+				for c := range h.clients {
+					delete(h.clients, c)
+					close(c.send)
+				}
+				close(h.register)
+				close(h.unregister)
+				close(h.broadcast)
+				h.register = nil
+				h.unregister = nil
+				h.broadcast = nil
+				delete(hubs, h.id)
+				return
 			}
 		}
 	}
@@ -575,7 +609,10 @@ func (c *Client) wsReadHandler() {
 		err := c.conn.ReadJSON(&parsedMessage)
 		if err != nil {
 			fmt.Println(err)
-			c.hub.unregister <- c
+			if c.hub != nil {
+				c.hub.unregister <- c
+			}
+			fmt.Println("close read handler")
 			return
 		}
 		fmt.Println(parsedMessage)
@@ -586,7 +623,22 @@ func (c *Client) wsReadHandler() {
 // write message from hub to ws connection
 func (c *Client) wsWriteHandler() {
 	for {
-		message := <-c.send
+		message, ok := <-c.send
+		if !ok {
+
+			revealReason := c.hub.revealReason
+			if revealReason == "" {
+				revealReason = "connectionError"
+			}
+			closeMsg := websocket.FormatCloseMessage(websocket.CloseInternalServerErr, c.hub.revealReason)
+			if err := c.conn.WriteMessage(websocket.CloseMessage, closeMsg); err != nil {
+				fmt.Println(err)
+			}
+			c.hub = nil
+			c.conn.Close()
+			fmt.Println("close write handler")
+			return
+		}
 		if err := c.conn.WriteJSON(message); err != nil {
 			fmt.Println(err)
 			return
@@ -620,26 +672,41 @@ func serveWS(h *Hub, w http.ResponseWriter, r *http.Request) {
 	go client.wsWriteHandler()
 }
 
+var hubs = make(map[string]*Hub)
+
+var AllowedOrigin = "*"
+
+var addr = ":6969"
+
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  0,
+	WriteBufferSize: 0,
+	CheckOrigin: func(r *http.Request) bool {
+		return true
+	},
+}
+
+var WordBank = []string{"test1", "test2", "test3"}
+
 func main() {
-
-	hubs := make(map[string]*Hub)
-
 	serveMux := mux.NewRouter()
 
 	serveMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Printf("Number of existing goroutines: %d\n", runtime.NumGoroutine())
 		h := newHub()
 		go h.run()
+		fmt.Println(hubs)
 		id := strconv.Itoa(len(hubs))
 		hubs[id] = h
 		h.id = id
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Origin", AllowedOrigin)
 		w.Write([]byte(id))
 	}).Methods(http.MethodPost)
 
 	serveMux.HandleFunc("/{rid}", func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
-		_, ok := hubs[vars["rid"]]
-		if !ok {
+		hub, ok := hubs[vars["rid"]]
+		if !ok || hub.lobbyState != "wait" {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}

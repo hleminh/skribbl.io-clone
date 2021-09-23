@@ -99,7 +99,7 @@ export default function WaitRoom() {
                                 <select name='drawTime' disabled={isNotHost} id='drawTime' className='block block w-full mb-2 border border-black  disabled:opacity-50' value={gameContext.gameState.drawTime} onChange={setDrawTime}>
                                     {drawTimes}
                                 </select>
-                                <button disabled={isNotHost} className='bg-gray-200 hover:bg-gray-100 block w-full p-2 disabled:opacity-50' onClick={startGame}>Start Game</button>
+                                <button disabled={isNotHost || gameContext.gameState.players.length < 2} className='bg-gray-200 hover:bg-gray-100 block w-full p-2 disabled:opacity-50' onClick={startGame}>Start Game</button>
                             </div>
                         </div>
                     </div>

@@ -6,7 +6,7 @@ import { GameContext } from '../pages/_app';
 import { get } from './WebSocket';
 import { Summary } from '../models/Summary'
 import { PlayerScore } from '../models/PlayerScore';
-import { RevealReason } from '../models/RevealReason';
+import { ReasonMessage } from '../constants/ReasonMessage';
 import { sortByTurnScore } from '../common/Utils';
 
 const ws = get();
@@ -51,14 +51,14 @@ export default function RoundReveal() {
         </div>
     )
 
-    const revealReason = summary.reason === RevealReason.TimeOut ? 'Time is up!' : 'Everyone guessed the word!';
+    const reasonMessage: string = ReasonMessage[summary.reason];
 
     return (
         <div className='absolute top-0 right-0 bottom-0 left-0 bg-gray-100 flex items-center justify-center backdrop-filter backdrop-blur-sm'>
             <div className='flex flex-col border-1 border-gray-300 border-opacity-25 shadow-lg'>
                 <div className='text-center p-2 border-b-2 border-gray-200 bg-gray-200 select-none font-medium'>Turn Ended</div>
                 <div className='text-center p-2 pb-0 bg-white select-none'>{`The word was: ${summary.word}`}</div>
-                <div className='text-center bg-white select-none text-sm'>{revealReason}</div>
+                <div className='text-center bg-white select-none text-sm'>{reasonMessage}</div>
                 <div className='text-center flex-col bg-white select-none p-2'>
                     {playerScores}
                 </div>

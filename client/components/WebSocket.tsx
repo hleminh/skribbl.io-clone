@@ -4,6 +4,9 @@ import { Message } from "../models/Message";
 import { MessageType } from "../models/MessageType";
 import { Player } from "../models/Player";
 import { RoundState } from "../models/RoundState";
+import Router from 'next/router'
+import { ReasonMessage } from "../constants/ReasonMessage";
+import { RevealReason } from "../models/RevealReason";
 
 let ws: WebSocket;
 
@@ -146,6 +149,7 @@ export const init = (gameContext: any, roomId: string, playerName: string): Prom
                         }])
                     });
                     break;
+               
             };
         });
 
@@ -157,6 +161,19 @@ export const init = (gameContext: any, roomId: string, playerName: string): Prom
             ws.send(JSON.stringify({
                 "type": MessageType.GetGameState
             }));
+        }
+
+        ws.onclose = (event) => {
+            if (gameContext.getGameState().lobbyState !== LobbyState.Reveal) {
+                let alertMsg: string;
+                if (event.reason) {
+                    alertMsg = ReasonMessage[event.reason];
+                } else {
+                    alertMsg = ReasonMessage[RevealReason.ConnectionError]
+                }
+                alert(alertMsg);
+            }
+            window.location.replace("/");
         }
     })
 }

@@ -82,6 +82,11 @@ export default function Paint(props: { height: number, width: number }) {
         return () => console.log('painter useEffect clean up');
     }, []);
 
+    useEffect(() => {
+        canvasContextRef.current!.fillStyle = 'white';
+        canvasContextRef.current!.fillRect(0, 0, canvasRef.current!.width, canvasRef.current!.height);
+    }, [gameContext.gameState.word])
+
     const mouseDownHandler: MouseEventHandler = (e: React.MouseEvent<HTMLCanvasElement, MouseEvent>) => {
         if (player.isDrawing && e.button === 0) {
             switch (brush.tool) {
