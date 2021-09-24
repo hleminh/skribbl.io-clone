@@ -676,7 +676,7 @@ var hubs = make(map[string]*Hub)
 
 var AllowedOrigin = "*"
 
-var addr = ":6969"
+var addr = ":8080"
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  0,

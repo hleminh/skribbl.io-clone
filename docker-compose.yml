@@ -8,4 +8,4 @@ services:
     build: ./nginx
     ports:
       - 80:80
-      - 6969:6969
+      - 8080:8080

@@ -10,6 +10,6 @@ RUN go mod download
 
 COPY ./ ./
 
-EXPOSE 6969
+EXPOSE 8080
 
 CMD ["go", "run", "."]
