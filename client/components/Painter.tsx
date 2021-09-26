@@ -55,16 +55,7 @@ export default function Paint(props: { height: number, width: number }) {
                 case MessageType.Draw: {
                     const ctx = canvasContextRef.current;
                     const data = JSON.parse(msg.data!);
-                    ctx!.strokeStyle = data.strokeStyle;
-                    ctx!.lineWidth = data.lineWidth;
-                    ctx!.lineCap = 'round';
-                    ctx!.lineJoin = 'round';
-                    ctx!.imageSmoothingEnabled = false;
-                    ctx!.beginPath();
-                    ctx!.moveTo(data.moveToX, data.moveToY);
-                    ctx!.lineTo(data.lineToX, data.lineToY);
-                    ctx!.closePath();
-                    ctx!.stroke();
+                    draw(data.strokeStyle, data.lineWidth, data.moveToX, data.moveToY, data.lineToX, data.lineToY);
                     break;
                 }
                 case MessageType.Fill: {
@@ -109,9 +100,21 @@ export default function Paint(props: { height: number, width: number }) {
             x: e.nativeEvent.offsetX,
             y: e.nativeEvent.offsetY
         });
+        draw(brush.color, brush.width, mouseCoors.x, mouseCoors.y, e.nativeEvent.offsetX, e.nativeEvent.offsetY);
+        ws!.send(JSON.stringify({
+            type: MessageType.Draw,
+            data: JSON.stringify({
+                strokeStyle: brush.color,
+                lineWidth: brush.width,
+                moveToX: mouseCoors.x,
+                moveToY: mouseCoors.y,
+                lineToX: e.nativeEvent.offsetX,
+                lineToY: e.nativeEvent.offsetY,
+            })
+        }));
     }
 
-    const stopDrawing: MouseEventHandler = (e: React.MouseEvent<HTMLElement, MouseEvent>) => {
+    const stopDrawing = () => {
         setDrawing(false);
         setMouseCoors({
             x: 0,
@@ -149,31 +152,20 @@ export default function Paint(props: { height: number, width: number }) {
     }
 
     const showCursor = () => {
-        if (player.isDrawing) {
+        if (player.isDrawing && cursorRef.current!.style.visibility !== 'visible') {
             cursorRef.current!.style.visibility = 'visible';
         }
     }
 
     const hideCursor = () => {
-        if (player.isDrawing) {
+        if (player.isDrawing && cursorRef.current!.style.visibility !== 'hidden') {
             cursorRef.current!.style.visibility = 'hidden';
         }
     }
 
-    const draw: MouseEventHandler = (e: React.MouseEvent<HTMLCanvasElement, MouseEvent>) => {
+    const mouseMoveHandler: MouseEventHandler = (e: React.MouseEvent<HTMLCanvasElement, MouseEvent>) => {
         if (drawing) {
-            const ctx = canvasContextRef.current;
-            ctx!.strokeStyle = brush.color;
-            ctx!.lineWidth = brush.width;
-            ctx!.lineCap = 'round';
-            ctx!.lineJoin = 'round';
-            ctx!.imageSmoothingEnabled = false;
-            ctx!.beginPath();
-            ctx!.moveTo(mouseCoors.x, mouseCoors.y);
-            ctx!.lineTo(e.nativeEvent.offsetX, e.nativeEvent.offsetY);
-            ctx!.closePath();
-            ctx!.stroke();
-
+            draw(brush.color, brush.width, mouseCoors.x, mouseCoors.y, e.nativeEvent.offsetX, e.nativeEvent.offsetY);
             ws!.send(JSON.stringify({
                 type: MessageType.Draw,
                 data: JSON.stringify({
@@ -185,17 +177,37 @@ export default function Paint(props: { height: number, width: number }) {
                     lineToY: e.nativeEvent.offsetY,
                 })
             }));
-
-            setMouseCoors({
-                x: e.nativeEvent.offsetX,
-                y: e.nativeEvent.offsetY
-            });
         }
+        setMouseCoors({
+            x: e.nativeEvent.offsetX,
+            y: e.nativeEvent.offsetY
+        });
+    }
 
+    const mouseOutHandler: MouseEventHandler = (e: React.MouseEvent<HTMLCanvasElement, MouseEvent>) => {
+        hideCursor();
+        stopDrawing();
+    }
+
+    const trackMouse: MouseEventHandler = (e: React.MouseEvent) => {
         if (player.isDrawing) {
             cursorRef.current!.style.left = `${e.clientX + window.scrollX - brush.width / 2}px`;
             cursorRef.current!.style.top = `${e.clientY + window.scrollY - brush.width / 2}px`;
         }
+    }
+
+    const draw = (strokeStyle: string, lineWidth: number, moveToX: number, moveToY: number, lineToX: number, lineToY: number) => {
+        const ctx = canvasContextRef.current;
+        ctx!.strokeStyle = strokeStyle;
+        ctx!.lineWidth = lineWidth;
+        ctx!.lineCap = 'round';
+        ctx!.lineJoin = 'round';
+        ctx!.imageSmoothingEnabled = false;
+        ctx!.beginPath();
+        ctx!.moveTo(moveToX, moveToY);
+        ctx!.lineTo(lineToX, lineToY);
+        ctx!.closePath();
+        ctx!.stroke();
     }
 
     const startFilling = (e: React.MouseEvent<HTMLCanvasElement, MouseEvent>) => {
@@ -215,7 +227,7 @@ export default function Paint(props: { height: number, width: number }) {
         }));
     }
 
-    function hex2RGB(hex: string) {
+    const hex2RGB = (hex: string) => {
         let m = hex.match(/^#?([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i)!;
         return {
             r: parseInt(m[1], 16),
@@ -326,8 +338,7 @@ export default function Paint(props: { height: number, width: number }) {
         <div className='flex flex-col items-center'>
             <div
                 className='relative flex-none border-gray-300 border-2 border-opacity-25 mb-2 shadow-lg'
-                onMouseUp={stopDrawing}
-                onMouseLeave={stopDrawing}
+                onMouseMove={trackMouse}
             >
                 {gameContext.gameState.roundState === RoundState.ChooseWord &&
                     <WordChooser />
@@ -348,16 +359,17 @@ export default function Paint(props: { height: number, width: number }) {
                     ref={canvasRef}
                     onMouseDown={mouseDownHandler}
                     onMouseUp={stopDrawing}
-                    onMouseMove={draw}
-                    onMouseEnter={showCursor}
-                    onMouseLeave={hideCursor}
+                    onMouseLeave={stopDrawing}
+                    onMouseOver={showCursor}
+                    onMouseMove={mouseMoveHandler}
+                    onMouseOut={mouseOutHandler}
                 >
                     You need a browser that supports Canvas to see this
                 </canvas>
             </div>
 
             {player.isDrawing &&
-                <div className={`bg-white absolute flex items-center justify-center pointer-events-none rounded-full border-black border`} ref={cursorRef}>
+                <div className={`bg-white absolute flex items-center justify-center pointer-events-none rounded-full border-black border invisible`} ref={cursorRef}>
                     <div
                         className='rounded-full border border-white'
                         style={{

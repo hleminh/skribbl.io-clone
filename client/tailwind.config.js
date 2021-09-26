@@ -1,4 +1,5 @@
 const colors = require('./node_modules/tailwindcss/colors');
+const plugin = require("tailwindcss/plugin");
 
 module.exports = {
   purge: [],
@@ -19,5 +20,15 @@ module.exports = {
       opacity: ['disabled'],
     },
   },
-  plugins: [],
+  plugins: [
+    plugin(function ({ addUtilities, theme, config }) {
+      const themeColors = theme('colors');
+
+      addUtilities({
+        '.border-b-blue-500': {
+          borderBottomColor: themeColors['blue']['500'],
+        }
+      });
+    })
+  ],
 }

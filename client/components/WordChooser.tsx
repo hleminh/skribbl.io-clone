@@ -27,6 +27,7 @@ export default function WoodChooser() {
     }
 
     useEffect(() => {
+        setWords([]);
         ws.addEventListener('message', eventHandler);
         if (player.isDrawing) {
             ws.send(JSON.stringify({
@@ -55,10 +56,21 @@ export default function WoodChooser() {
             <div className='border-1 border-gray-300 border-opacity-25 shadow-lg'>
                 {player.isDrawing &&
                     <>
-                        <div className='text-center p-2 border-b-2 border-gray-200 bg-gray-200 select-none font-medium'>Choose a word</div>
+                        <div className='text-center p-2 border-b-2 border-gray-200 bg-gray-200 select-none font-medium'>Choose a word</div>         
                         <div className='flex justify-around bg-white p-2'>
-                            {wordButtons}
+                            {wordButtons.length > 0 &&
+                                wordButtons
+                            }
+                            {wordButtons.length === 0 &&
+                                <div 
+                                    className='border-4 border-b-blue-500 rounded-full w-8 h-8' 
+                                    style={{
+                                        animation: 'spin 1s linear infinite'
+                                    }}
+                                />
+                            }
                         </div>
+                       
                     </>
                 }
                 {!player.isDrawing && drawer &&

@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"runtime"
 	"strconv"
@@ -354,11 +355,12 @@ func (h *Hub) run() {
 				if !message.sender.isDrawing {
 					continue
 				}
-				wordBankJSON, err := json.Marshal(WordBank)
+				wordChoices := get3RandomNouns()
+				wordChoicesJSON, err := json.Marshal(wordChoices)
 				if err != nil {
 					fmt.Println(err)
 				}
-				message.sender.send <- createOutgoingMessage(nil, "setWordChoices", string(wordBankJSON))
+				message.sender.send <- createOutgoingMessage(nil, "setWordChoices", string(wordChoicesJSON))
 				continue
 			case "chooseWord":
 				if !message.sender.isDrawing {
@@ -687,6 +689,24 @@ var upgrader = websocket.Upgrader{
 }
 
 var WordBank = []string{"test1", "test2", "test3"}
+
+func get3RandomNouns() [3]string {
+	resp, err := http.Get("https://random-word-form.herokuapp.com/random/noun?count=3")
+	if err != nil {
+		fmt.Println(err)
+	}
+	body, err := ioutil.ReadAll(resp.Body)
+	defer resp.Body.Close()
+	if err != nil {
+		fmt.Println(err)
+	}
+	res := [3]string{}
+	err = json.Unmarshal(body, &res)
+	if err != nil {
+		fmt.Println(err)
+	}
+	return res
+}
 
 func main() {
 	serveMux := mux.NewRouter()

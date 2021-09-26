@@ -48,7 +48,7 @@ export default function Timer(props: { time: number }) {
                 <div
                     className='border-2 border-white text-right text-white pr-2'
                     style={{
-                        background: time > 30 ? 'green' : (time > 10 ? 'orange' : 'red'),
+                        background: time > Math.floor(props.time * 0.5) ? 'green' : (time > Math.floor(props.time * 0.2) ? 'orange' : 'red'),
                         width: `${100 - 100 * (props.time - time) / (props.time) }%`,
                         transition: 'width 1s linear, background-color 1s linear',
                         height: '100%'
