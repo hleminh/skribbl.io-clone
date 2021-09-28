@@ -8,8 +8,6 @@ import { get } from './WebSocket';
 import { Player } from '../models/Player';
 import { GameContext } from '../pages/_app';
 
-const ws = get();
-
 export default function PlayerItem(props: { player: Player }) {
     const [message, setMessage] = useState<String>('');
     const player = props.player;
@@ -35,8 +33,8 @@ export default function PlayerItem(props: { player: Player }) {
                 {!player.isHost && <BsFillPersonFill className='inline-block' />}
             </div>
             <div className={`whitespace-nowrap overflow-hidden overflow-ellipsis ${player.isGuessed ? 'text-green-500' : ''}`}>
-                <div>{player.name} {player.isYou ? '(You)' : ''}</div>
-                <div className='text-sm'>Score: {player.gameScore}</div>
+                <div className='whitespace-nowrap overflow-hidden overflow-ellipsis'>{player.name} {player.isYou ? '(You)' : ''}</div>
+                <div className='whitespace-nowrap overflow-hidden overflow-ellipsis text-sm'>Score: {player.gameScore}</div>
             </div>
             <div className='flex relative w-0'>
                 <ChatMessageBubble withFadeOut>{message}</ChatMessageBubble>

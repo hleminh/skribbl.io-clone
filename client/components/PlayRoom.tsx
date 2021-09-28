@@ -6,11 +6,6 @@ import PlayersList from './PlayersList';
 import GameInfo from './GameInfo';
 
 import { GameContext } from '../pages/_app';
-import { get } from './WebSocket';
-import { MessageType } from '../models/MessageType';
-import { Player } from '../models/Player';
-
-const ws = get();
 
 export default function PlayRoom() {
 
@@ -38,10 +33,10 @@ export default function PlayRoom() {
             <div
                 className='grid gap-2'
                 style={{
-                    gridTemplateColumns: `minmax(0, max-content) max-content minmax(0, 1fr)`
+                    gridTemplateColumns: `max-content max-content minmax(400px, 1fr)`
                 }}
             >
-                <PlayersList maxHeight={500}/>
+                <PlayersList maxHeight={500} />
                 <Painter height={500} width={800} />
                 <Chat height={500} />
             </div>

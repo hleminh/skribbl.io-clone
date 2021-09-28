@@ -1,11 +1,8 @@
 import React, { useContext, useEffect, useRef, useState } from 'react';
 import { RiTimerLine } from 'react-icons/ri';
-import { Message } from '../models/Message';
 import { RoundState } from '../models/RoundState';
 import { GameContext } from '../pages/_app';
 import { get } from './WebSocket';
-
-const ws = get();
 
 export default function Timer(props: { time: number }) {
     const [time, setTime] = useState(props.time);

@@ -20,7 +20,7 @@ export default function ChatMessageBubble(props: { children: String, withFadeOut
 
     return (
         <div
-            className='absolute inline-block bg-gray-200 ml-1 flex items-center p-2 top-0 left-4 bottom-0 pointer-events-none z-10'
+            className='absolute inline-block bg-gray-200 ml-1 flex items-center p-2 top-0 left-4 bottom-0 pointer-events-none z-10 max-w-xs'
             style={{
                 opacity: visible ? 1 : 0,
                 transition: 'opacity 500ms ease-in-out'
@@ -33,7 +33,7 @@ export default function ChatMessageBubble(props: { children: String, withFadeOut
                 }}>
                 &nbsp;
             </div>
-            {props.children}
+            <div className='overflow-hidden overflow-ellipsis'>{props.children}</div>
         </div>
     )
 }

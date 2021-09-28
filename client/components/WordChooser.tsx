@@ -76,7 +76,7 @@ export default function WoodChooser() {
                 {!player.isDrawing && drawer &&
                     <>
                         <div className='flex justify-around bg-white p-2'>
-                            {`${drawer.name} is choosing word`}
+                            {`${drawer.name} is choosing the word`}
                         </div>
                     </>
                 }

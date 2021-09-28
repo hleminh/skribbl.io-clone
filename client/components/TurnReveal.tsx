@@ -45,10 +45,10 @@ export default function RoundReveal() {
     }
 
     const playerScores = summary.scores.sort(sortByTurnScore).map((score: PlayerScore, index: number) =>
-        <div key={index} className='flex justify-between'>
-            <span className='font-medium'>{score.name}{score.isYou ? ' (You)' : ''}&nbsp;</span>
-            <span className={`${score.turnScore ? 'text-green-500' : 'text-red-500'} font-medium`}>+{score.turnScore}</span>
-        </div>
+        <React.Fragment key={index}>
+            <div className='font-medium text-left'>{score.name}{score.isYou ? ' (You)' : ''}&nbsp;</div>
+            <div className={`${score.turnScore ? 'text-green-500' : 'text-red-500'} font-medium text-right`}>+{score.turnScore}</div>
+        </React.Fragment>
     )
 
     const reasonMessage: string = ReasonMessage[summary.reason];
@@ -58,8 +58,14 @@ export default function RoundReveal() {
             <div className='flex flex-col border-1 border-gray-300 border-opacity-25 shadow-lg'>
                 <div className='text-center p-2 border-b-2 border-gray-200 bg-gray-200 select-none font-medium'>Turn Ended</div>
                 <div className='text-center p-2 pb-0 bg-white select-none'>{`The word was: ${summary.word}`}</div>
-                <div className='text-center bg-white select-none text-sm'>{reasonMessage}</div>
-                <div className='text-center flex-col bg-white select-none p-2'>
+                <div className='text-center bg-white select-none text-sm pr-2 pl-2'>{reasonMessage}</div>
+                <div className='text-center flex-col bg-white select-none p-2 pb-0'>Turn Score</div>
+                <div 
+                    className='text-center grid grid-auto-cols bg-white select-none p-2' 
+                    style={{
+                        gridTemplateColumns: 'max-content minmax(max-content, 1fr)'
+                    }}
+                >
                     {playerScores}
                 </div>
                 <div className='flex items-center justify-center bg-white p-2'>

@@ -1,6 +1,5 @@
 import React, { useContext, useRef } from 'react';
 import { MouseEventHandler } from 'react';
-import { Message } from '../models/Message';
 import { GameContext } from '../pages/_app';
 import { init } from './WebSocket';
 

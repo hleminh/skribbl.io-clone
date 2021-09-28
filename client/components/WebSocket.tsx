@@ -4,7 +4,6 @@ import { Message } from "../models/Message";
 import { MessageType } from "../models/MessageType";
 import { Player } from "../models/Player";
 import { RoundState } from "../models/RoundState";
-import Router from 'next/router'
 import { ReasonMessage } from "../constants/ReasonMessage";
 import { RevealReason } from "../models/RevealReason";
 
