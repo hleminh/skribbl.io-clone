@@ -106,7 +106,10 @@ export default function WaitRoom() {
                     <div className='flex flex-col'>
                         <div
                             className='border-2 border-gray-300 border-opacity-25 flex flex-1 flex-col overflow-y-auto shadow-lg'
-                            style={{ maxHeight: settingsRef.current ? settingsRef.current!.offsetHeight : '' }}
+                            style={{
+                                maxHeight: settingsRef.current ? settingsRef.current!.offsetHeight : '',
+                                minWidth: 200
+                            }}
                         >
                             <div className='text-center p-2 border-b-2 border-gray-200 bg-gray-200 select-none font-medium'>Players</div>
                             <div className='flex flex-1 flex-col bg-white items-start p-2 min-h-0 overflow-y-auto'>

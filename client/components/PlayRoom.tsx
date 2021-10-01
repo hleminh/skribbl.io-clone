@@ -19,9 +19,9 @@ export default function PlayRoom() {
 
     return (
         <div
-            className='grid gap-2'
+            className='grid gap-2 min-h-0 max-h-full'
             style={{
-                gridTemplateRows: `max-content max-content max-content`
+                gridTemplateRows: `max-content max-content 0`
             }}
         >
             <div>
@@ -31,14 +31,14 @@ export default function PlayRoom() {
                 <GameInfo />
             </div>
             <div
-                className='grid gap-2'
+                className='grid gap-2 min-h-0 max-h-full'
                 style={{
-                    gridTemplateColumns: `max-content max-content minmax(400px, 1fr)`
+                    gridTemplateColumns: `max-content minmax(400px, 1fr) minmax(400px, 1fr)`
                 }}
             >
                 <PlayersList maxHeight={500} />
-                <Painter height={500} width={800} />
-                <Chat height={500} />
+                <Painter />
+                <Chat />
             </div>
         </div>
     )

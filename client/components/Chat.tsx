@@ -9,7 +9,7 @@ import { ChatMessageType } from '../models/ChatMessageType';
 
 const ws = get();
 
-export default function Chat(props: { height: number }) {
+export default function Chat() {
     const gameContext = useContext(GameContext);
 
     const messagesList = gameContext.gameState.chatMessages.map((msg: ChatMessageI, index: number) => <ChatMessage index={index} key={index} message={msg} />)
@@ -57,7 +57,9 @@ export default function Chat(props: { height: number }) {
     console.log('chat render');
 
     useEffect(() => {
-        console.log('chat useEffect');
+        window.addEventListener('resize', (event) => {
+            messagesListRef.current!.scrollTop = messagesListRef.current!.scrollHeight;
+        })
     }, []);
 
     useEffect(() => {
@@ -65,12 +67,7 @@ export default function Chat(props: { height: number }) {
     }, [gameContext.gameState.chatMessages]);
 
     return (
-        <div
-            className='border-gray-300 border-2 border-opacity-25 flex box-content shadow-lg'
-            style={{
-                height: props.height
-            }}
-        >
+        <div className='border-gray-300 border-2 border-opacity-25 flex box-content shadow-lg min-h-0'>
             <div className='flex flex-col bg-white p-2 flex-auto min-w-0'>
                 <div className='flex flex-col overflow-y-auto mb-2 pb-4 flex-1' ref={messagesListRef}>
                     {messagesList}

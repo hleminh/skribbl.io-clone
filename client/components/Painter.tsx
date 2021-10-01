@@ -20,27 +20,44 @@ import { Player } from '../models/Player';
 
 const ws = get();
 
-export default function Paint(props: { height: number, width: number }) {
+export default function Painter() {
     const [drawing, setDrawing] = useState(false);
     const [mouseCoors, setMouseCoors] = useState({ x: 0, y: 0 });
     const [brush, setBrush] = useState({ tool: Tools.Brush, color: 'black', prevColor: 'black', width: BrushSizes[0] });
+    const [instructions, setInstructions] = useState<any>([]);
 
     const gameContext = useContext(GameContext);
 
     const player: Player = gameContext.gameState.players.find((player: any) => player.isYou);
 
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
+    const canvasContainerRef = useRef<HTMLDivElement | null>(null);
     const canvasContextRef = useRef<CanvasRenderingContext2D | null>(null);
+
     const cursorRef = useRef<HTMLDivElement>(null);
+
+    const instructionsRef = useRef<[]>();
+
     console.log('painter render');
+
+    useEffect(() => {
+        instructionsRef.current = instructions;
+    }, [instructions])
+
+    useEffect(() => {
+        setInstructions([]);
+    }, [gameContext.gameState.word])
 
     useEffect(() => {
         console.log('painter useEffect');
 
+        const canvas = canvasRef.current!;
+        canvas.width = canvasContainerRef.current!.clientWidth;
+        canvas.height = canvas.width * 0.625;
+
         if (canvasRef) {
             canvasContextRef.current = canvasRef.current!.getContext('2d');
-            canvasContextRef.current!.fillStyle = 'white';
-            canvasContextRef.current!.fillRect(0, 0, canvasRef.current!.width, canvasRef.current!.height);
+            clear();
         }
 
         if (player.isDrawing) {
@@ -48,24 +65,86 @@ export default function Paint(props: { height: number, width: number }) {
             cursorRef.current!.style.height = `${brush.width}px`;
         }
 
+        window.addEventListener('resize', (event) => {
+            const canvas = canvasRef.current!;
+
+            canvas.width = canvasContainerRef.current!.clientWidth;
+            canvas.height = canvas.width * 0.625;
+
+            clear();
+
+            instructionsRef.current!.forEach((instruction: any) => {
+                switch (instruction.type) {
+                    case MessageType.Draw: {
+                        const data = instruction.data;
+                        draw(
+                            data.strokeStyle,
+                            data.lineWidth,
+                            data.moveToX * canvasRef.current!.width,
+                            data.moveToY * canvasRef.current!.height,
+                            data.lineToX * canvasRef.current!.width,
+                            data.lineToY * canvasRef.current!.height
+                        );
+                        break;
+                    }
+                    case MessageType.Fill: {
+                        const data = instruction.data;
+                        floodFill(data.startingX, data.startingY, data.color);
+                        break;
+                    }
+                }
+            });
+        });
+
         ws!.addEventListener('message', (event) => {
             const msg: Message = JSON.parse(event.data);
 
             switch (msg.type) {
                 case MessageType.Draw: {
-                    const ctx = canvasContextRef.current;
                     const data = JSON.parse(msg.data!);
-                    draw(data.strokeStyle, data.lineWidth, data.moveToX, data.moveToY, data.lineToX, data.lineToY);
+                    draw(
+                        data.strokeStyle,
+                        data.lineWidth,
+                        data.moveToX * canvasRef.current!.width,
+                        data.moveToY * canvasRef.current!.height,
+                        data.lineToX * canvasRef.current!.width,
+                        data.lineToY * canvasRef.current!.height
+                    );
+                    setInstructions([
+                        ...instructionsRef.current!,
+                        {
+                            type: MessageType.Draw,
+                            data: {
+                                strokeStyle: data.strokeStyle,
+                                lineWidth: data.lineWidth,
+                                moveToX: data.moveToX,
+                                moveToY: data.moveToY,
+                                lineToX: data.lineToX,
+                                lineToY: data.lineToY
+                            }
+                        }
+                    ]);
                     break;
                 }
                 case MessageType.Fill: {
                     const data = JSON.parse(msg.data!);
                     floodFill(data.startingX, data.startingY, data.color);
+                    setInstructions([
+                        ...instructionsRef.current!,
+                        {
+                            type: MessageType.Fill,
+                            data: {
+                                startingX: data.startingX,
+                                startingY: data.startingY,
+                                color: data.color
+                            }
+                        }
+                    ]);
                     break;
                 }
                 case MessageType.ClearCanvas: {
-                    canvasContextRef.current!.fillStyle = 'white';
-                    canvasContextRef.current!.fillRect(0, 0, canvasRef.current!.width, canvasRef.current!.height);
+                    clear();
+                    setInstructions([]);
                     break;
                 }
             }
@@ -106,12 +185,26 @@ export default function Paint(props: { height: number, width: number }) {
             data: JSON.stringify({
                 strokeStyle: brush.color,
                 lineWidth: brush.width,
-                moveToX: mouseCoors.x,
-                moveToY: mouseCoors.y,
-                lineToX: e.nativeEvent.offsetX,
-                lineToY: e.nativeEvent.offsetY,
+                moveToX: mouseCoors.x / canvasRef.current!.width,
+                moveToY: mouseCoors.y / canvasRef.current!.height,
+                lineToX: e.nativeEvent.offsetX / canvasRef.current!.width,
+                lineToY: e.nativeEvent.offsetY / canvasRef.current!.height,
             })
         }));
+        setInstructions([
+            ...instructions,
+            {
+                type: MessageType.Draw,
+                data: {
+                    strokeStyle: brush.color,
+                    lineWidth: brush.width,
+                    moveToX: mouseCoors.x / canvasRef.current!.width,
+                    moveToY: mouseCoors.y / canvasRef.current!.height,
+                    lineToX: e.nativeEvent.offsetX / canvasRef.current!.width,
+                    lineToY: e.nativeEvent.offsetY / canvasRef.current!.height,
+                }
+            }
+        ]);
     }
 
     const stopDrawing = () => {
@@ -122,12 +215,17 @@ export default function Paint(props: { height: number, width: number }) {
         });
     }
 
-    const clearCanvas: MouseEventHandler = (e: React.MouseEvent<HTMLElement, MouseEvent>) => {
-        canvasContextRef.current!.fillStyle = 'white';
-        canvasContextRef.current!.fillRect(0, 0, canvasRef.current!.width, canvasRef.current!.height);
+    const clearCanvas = () => {
+        clear();
         ws!.send(JSON.stringify({
             type: MessageType.ClearCanvas
         }));
+        setInstructions([]);
+    }
+
+    const clear = () => {
+        canvasContextRef.current!.fillStyle = 'white';
+        canvasContextRef.current!.fillRect(0, 0, canvasRef.current!.width, canvasRef.current!.height);
     }
 
     const changeBrushColor: MouseEventHandler = (e: React.MouseEvent<HTMLButtonElement, MouseEvent>) => {
@@ -171,12 +269,26 @@ export default function Paint(props: { height: number, width: number }) {
                 data: JSON.stringify({
                     strokeStyle: brush.color,
                     lineWidth: brush.width,
-                    moveToX: mouseCoors.x,
-                    moveToY: mouseCoors.y,
-                    lineToX: e.nativeEvent.offsetX,
-                    lineToY: e.nativeEvent.offsetY,
+                    moveToX: mouseCoors.x / canvasRef.current!.width,
+                    moveToY: mouseCoors.y / canvasRef.current!.height,
+                    lineToX: e.nativeEvent.offsetX / canvasRef.current!.width,
+                    lineToY: e.nativeEvent.offsetY / canvasRef.current!.height,
                 })
             }));
+            setInstructions([
+                ...instructions,
+                {
+                    type: MessageType.Draw,
+                    data: {
+                        strokeStyle: brush.color,
+                        lineWidth: brush.width,
+                        moveToX: mouseCoors.x / canvasRef.current!.width,
+                        moveToY: mouseCoors.y / canvasRef.current!.height,
+                        lineToX: e.nativeEvent.offsetX / canvasRef.current!.width,
+                        lineToY: e.nativeEvent.offsetY / canvasRef.current!.height,
+                    }
+                }
+            ]);
         }
         setMouseCoors({
             x: e.nativeEvent.offsetX,
@@ -191,8 +303,10 @@ export default function Paint(props: { height: number, width: number }) {
 
     const trackMouse: MouseEventHandler = (e: React.MouseEvent) => {
         if (player.isDrawing) {
-            cursorRef.current!.style.left = `${e.clientX + window.scrollX - brush.width / 2}px`;
-            cursorRef.current!.style.top = `${e.clientY + window.scrollY - brush.width / 2}px`;
+            const rect = canvasRef.current!.getBoundingClientRect();
+            const borderWidth = (canvasContainerRef.current!.offsetWidth - canvasContainerRef.current!.clientWidth) / 2;
+            cursorRef.current!.style.left = `${e.clientX - rect.left + borderWidth - brush.width / 2}px`;
+            cursorRef.current!.style.top = `${e.clientY - rect.top + borderWidth - brush.width / 2}px`;
         }
     }
 
@@ -225,6 +339,18 @@ export default function Paint(props: { height: number, width: number }) {
                 color: brush.color,
             })
         }));
+
+        setInstructions([
+            ...instructions,
+            {
+                type: MessageType.Fill,
+                data: {
+                    startingX: startingX,
+                    startingY: startingY,
+                    color: brush.color
+                }
+            }
+        ]);
     }
 
     const hex2RGB = (hex: string) => {
@@ -335,10 +461,11 @@ export default function Paint(props: { height: number, width: number }) {
     ));
 
     return (
-        <div className='flex flex-col items-center'>
+        <div className='relative flex flex-col items-center'>
             <div
-                className='relative flex-none border-gray-300 border-2 border-opacity-25 mb-2 shadow-lg'
+                className='relative flex-none border-gray-300 border-2 border-opacity-25 shadow-lg w-full'
                 onMouseMove={trackMouse}
+                ref={canvasContainerRef}
             >
                 {gameContext.gameState.roundState === RoundState.ChooseWord &&
                     <WordChooser />
@@ -354,8 +481,6 @@ export default function Paint(props: { height: number, width: number }) {
                 }
                 <canvas
                     className={`block ${player.isDrawing ? 'cursor-none' : 'cursor-not-allowed'}`}
-                    height={props.height}
-                    width={props.width}
                     ref={canvasRef}
                     onMouseDown={mouseDownHandler}
                     onMouseUp={stopDrawing}
@@ -383,7 +508,7 @@ export default function Paint(props: { height: number, width: number }) {
 
             {player.isDrawing &&
                 <div
-                    className='grid gap-2'
+                    className='absolute mt-2 top-full grid gap-2'
                     style={{
                         gridTemplateColumns: `max-content max-content max-content`
                     }}
