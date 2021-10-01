@@ -691,21 +691,37 @@ var upgrader = websocket.Upgrader{
 var WordBank = []string{"test1", "test2", "test3"}
 
 func get3RandomNouns() [3]string {
-	resp, err := http.Get("https://random-word-form.herokuapp.com/random/noun?count=3")
-	if err != nil {
-		fmt.Println(err)
+	for {
+		resp, err := http.Get("https://random-word-form.herokuapp.com/random/noun?count=3")
+		if err != nil {
+			fmt.Println(err)
+		}
+		body, err := ioutil.ReadAll(resp.Body)
+		defer resp.Body.Close()
+		if err != nil {
+			fmt.Println(err)
+		}
+		res := [3]string{}
+		err = json.Unmarshal(body, &res)
+		if err != nil {
+			fmt.Println(err)
+		}
+		if !checkDuplicateWord(res) {
+			return res
+		}
 	}
-	body, err := ioutil.ReadAll(resp.Body)
-	defer resp.Body.Close()
-	if err != nil {
-		fmt.Println(err)
+}
+
+// returns true if there are duplicated words
+func checkDuplicateWord(words [3]string) bool {
+	for index1, word1 := range words {
+		for index2, word2 := range words {
+			if index1 != index2 && word1 == word2 {
+				return true
+			}
+		}
 	}
-	res := [3]string{}
-	err = json.Unmarshal(body, &res)
-	if err != nil {
-		fmt.Println(err)
-	}
-	return res
+	return false
 }
 
 func main() {
