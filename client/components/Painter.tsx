@@ -17,6 +17,8 @@ import { LobbyState } from '../models/LobbyState';
 import LobbyReveal from './LobbyReveal';
 import TurnReveal from './TurnReveal';
 import { Player } from '../models/Player';
+import { hex2RGB } from '../common/Utils';
+import _ from 'lodash-es';
 
 const ws = get();
 
@@ -30,32 +32,68 @@ export default function Painter() {
 
     const player: Player = gameContext.gameState.players.find((player: any) => player.isYou);
 
-    const canvasRef = useRef<HTMLCanvasElement | null>(null);
-    const canvasContainerRef = useRef<HTMLDivElement | null>(null);
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const canvasContainerRef = useRef<HTMLDivElement>(null);
     const canvasContextRef = useRef<CanvasRenderingContext2D | null>(null);
 
     const cursorRef = useRef<HTMLDivElement>(null);
 
     const instructionsRef = useRef<[]>();
 
+    const fillWorkerRef = useRef<Worker>();
+
+    const debouncedRedraw = _.debounce(() => {
+        clear();
+        instructionsRef.current!.forEach((instruction: any) => {
+            switch (instruction.type) {
+                case MessageType.Draw: {
+                    const data = instruction.data;
+                    draw(data);
+                    break;
+                }
+                case MessageType.Fill: {
+                    const data = instruction.data;
+                    floodFill(data);
+                    break;
+                }
+            }
+        });
+    }, 200);
+
+    const fitCanvasToContainer = () => {
+        const canvas = canvasRef.current!;
+        const canvasContainerWidth = canvasContainerRef.current!.getBoundingClientRect().width;
+        const bordersWidth = canvasContainerRef.current!.offsetWidth - canvasContainerRef.current!.clientWidth;
+        canvas.width = Math.floor(canvasContainerWidth) - bordersWidth;
+        canvas.height = canvas.width * 0.625;
+    }
+
     console.log('painter render');
 
     useEffect(() => {
         instructionsRef.current = instructions;
-    }, [instructions])
+    }, [instructions]);
 
     useEffect(() => {
         setInstructions([]);
-    }, [gameContext.gameState.word])
+    }, [gameContext.gameState.word]);
 
     useEffect(() => {
         console.log('painter useEffect');
 
-        const canvas = canvasRef.current!;
-        canvas.width = canvasContainerRef.current!.clientWidth;
-        canvas.height = canvas.width * 0.625;
+        fitCanvasToContainer();
 
-        if (canvasRef) {
+        fillWorkerRef.current = new Worker(new URL('../workers/FloodFill.ts', import.meta.url));
+        fillWorkerRef.current.addEventListener('message', (event) => {
+            const canvas = canvasRef.current!;
+            const ctx = canvasContextRef.current!;
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            imageData.data.set(event.data);
+            ctx.putImageData(imageData, 0, 0);
+        });
+
+        if (canvasRef.current) {
+            console.log('mount clear');
             canvasContextRef.current = canvasRef.current!.getContext('2d');
             clear();
         }
@@ -66,34 +104,8 @@ export default function Painter() {
         }
 
         window.addEventListener('resize', (event) => {
-            const canvas = canvasRef.current!;
-
-            canvas.width = canvasContainerRef.current!.clientWidth;
-            canvas.height = canvas.width * 0.625;
-
-            clear();
-
-            instructionsRef.current!.forEach((instruction: any) => {
-                switch (instruction.type) {
-                    case MessageType.Draw: {
-                        const data = instruction.data;
-                        draw(
-                            data.strokeStyle,
-                            data.lineWidth,
-                            data.moveToX * canvasRef.current!.width,
-                            data.moveToY * canvasRef.current!.height,
-                            data.lineToX * canvasRef.current!.width,
-                            data.lineToY * canvasRef.current!.height
-                        );
-                        break;
-                    }
-                    case MessageType.Fill: {
-                        const data = instruction.data;
-                        floodFill(data.startingX, data.startingY, data.color);
-                        break;
-                    }
-                }
-            });
+            fitCanvasToContainer();
+            debouncedRedraw();
         });
 
         ws!.addEventListener('message', (event) => {
@@ -102,42 +114,24 @@ export default function Painter() {
             switch (msg.type) {
                 case MessageType.Draw: {
                     const data = JSON.parse(msg.data!);
-                    draw(
-                        data.strokeStyle,
-                        data.lineWidth,
-                        data.moveToX * canvasRef.current!.width,
-                        data.moveToY * canvasRef.current!.height,
-                        data.lineToX * canvasRef.current!.width,
-                        data.lineToY * canvasRef.current!.height
-                    );
+                    draw(data);
                     setInstructions([
                         ...instructionsRef.current!,
                         {
                             type: MessageType.Draw,
-                            data: {
-                                strokeStyle: data.strokeStyle,
-                                lineWidth: data.lineWidth,
-                                moveToX: data.moveToX,
-                                moveToY: data.moveToY,
-                                lineToX: data.lineToX,
-                                lineToY: data.lineToY
-                            }
+                            data: data
                         }
                     ]);
                     break;
                 }
                 case MessageType.Fill: {
                     const data = JSON.parse(msg.data!);
-                    floodFill(data.startingX, data.startingY, data.color);
+                    floodFillWithWorker(data);
                     setInstructions([
                         ...instructionsRef.current!,
                         {
                             type: MessageType.Fill,
-                            data: {
-                                startingX: data.startingX,
-                                startingY: data.startingY,
-                                color: data.color
-                            }
+                            data: data
                         }
                     ]);
                     break;
@@ -149,7 +143,10 @@ export default function Painter() {
                 }
             }
         });
-        return () => console.log('painter useEffect clean up');
+        return () => {
+            console.log('painter useEffect clean up');
+            fillWorkerRef.current?.terminate();
+        }
     }, []);
 
     useEffect(() => {
@@ -175,36 +172,40 @@ export default function Painter() {
 
     const startDrawing: MouseEventHandler = (e: React.MouseEvent<HTMLCanvasElement, MouseEvent>) => {
         setDrawing(true);
-        setMouseCoors({
-            x: e.nativeEvent.offsetX,
-            y: e.nativeEvent.offsetY
-        });
-        draw(brush.color, brush.width, mouseCoors.x, mouseCoors.y, e.nativeEvent.offsetX, e.nativeEvent.offsetY);
+
+        const moveToX = (mouseCoors.x / canvasRef.current!.width);
+        const moveToY = (mouseCoors.y / canvasRef.current!.height);
+        const lineToX = (e.nativeEvent.offsetX / canvasRef.current!.width);
+        const lineToY = (e.nativeEvent.offsetY / canvasRef.current!.height);
+
+        const data = {
+            strokeStyle: brush.color,
+            lineWidth: brush.width,
+            moveToX: moveToX,
+            moveToY: moveToY,
+            lineToX: lineToX,
+            lineToY: lineToY,
+        }
+
+        draw(data);
+
         ws!.send(JSON.stringify({
             type: MessageType.Draw,
-            data: JSON.stringify({
-                strokeStyle: brush.color,
-                lineWidth: brush.width,
-                moveToX: mouseCoors.x / canvasRef.current!.width,
-                moveToY: mouseCoors.y / canvasRef.current!.height,
-                lineToX: e.nativeEvent.offsetX / canvasRef.current!.width,
-                lineToY: e.nativeEvent.offsetY / canvasRef.current!.height,
-            })
+            data: JSON.stringify(data)
         }));
+
         setInstructions([
             ...instructions,
             {
                 type: MessageType.Draw,
-                data: {
-                    strokeStyle: brush.color,
-                    lineWidth: brush.width,
-                    moveToX: mouseCoors.x / canvasRef.current!.width,
-                    moveToY: mouseCoors.y / canvasRef.current!.height,
-                    lineToX: e.nativeEvent.offsetX / canvasRef.current!.width,
-                    lineToY: e.nativeEvent.offsetY / canvasRef.current!.height,
-                }
+                data: data
             }
         ]);
+
+        setMouseCoors({
+            x: e.nativeEvent.offsetX,
+            y: e.nativeEvent.offsetY
+        });
     }
 
     const stopDrawing = () => {
@@ -236,7 +237,6 @@ export default function Painter() {
             prevColor: brush.color,
             color: color
         });
-        // cursorRef.current!.style.background = `${color}`;
     }
 
     const changeBrushWidth: MouseEventHandler = (e: React.MouseEvent<HTMLButtonElement, MouseEvent>) => {
@@ -263,33 +263,36 @@ export default function Painter() {
 
     const mouseMoveHandler: MouseEventHandler = (e: React.MouseEvent<HTMLCanvasElement, MouseEvent>) => {
         if (drawing) {
-            draw(brush.color, brush.width, mouseCoors.x, mouseCoors.y, e.nativeEvent.offsetX, e.nativeEvent.offsetY);
+            const moveToX = (mouseCoors.x / canvasRef.current!.width);
+            const moveToY = (mouseCoors.y / canvasRef.current!.height);
+            const lineToX = (e.nativeEvent.offsetX / canvasRef.current!.width);
+            const lineToY = (e.nativeEvent.offsetY / canvasRef.current!.height);
+
+            const data = {
+                strokeStyle: brush.color,
+                lineWidth: brush.width,
+                moveToX: moveToX,
+                moveToY: moveToY,
+                lineToX: lineToX,
+                lineToY: lineToY,
+            }
+
+            draw(data);
+
             ws!.send(JSON.stringify({
                 type: MessageType.Draw,
-                data: JSON.stringify({
-                    strokeStyle: brush.color,
-                    lineWidth: brush.width,
-                    moveToX: mouseCoors.x / canvasRef.current!.width,
-                    moveToY: mouseCoors.y / canvasRef.current!.height,
-                    lineToX: e.nativeEvent.offsetX / canvasRef.current!.width,
-                    lineToY: e.nativeEvent.offsetY / canvasRef.current!.height,
-                })
+                data: JSON.stringify(data)
             }));
+
             setInstructions([
                 ...instructions,
                 {
                     type: MessageType.Draw,
-                    data: {
-                        strokeStyle: brush.color,
-                        lineWidth: brush.width,
-                        moveToX: mouseCoors.x / canvasRef.current!.width,
-                        moveToY: mouseCoors.y / canvasRef.current!.height,
-                        lineToX: e.nativeEvent.offsetX / canvasRef.current!.width,
-                        lineToY: e.nativeEvent.offsetY / canvasRef.current!.height,
-                    }
+                    data: data
                 }
             ]);
         }
+
         setMouseCoors({
             x: e.nativeEvent.offsetX,
             y: e.nativeEvent.offsetY
@@ -310,7 +313,8 @@ export default function Painter() {
         }
     }
 
-    const draw = (strokeStyle: string, lineWidth: number, moveToX: number, moveToY: number, lineToX: number, lineToY: number) => {
+    const draw = (data: { strokeStyle: string, lineWidth: number, moveToX: number, moveToY: number, lineToX: number, lineToY: number }) => {
+        const { strokeStyle, lineWidth, moveToX, moveToY, lineToX, lineToY } = data;
         const ctx = canvasContextRef.current;
         ctx!.strokeStyle = strokeStyle;
         ctx!.lineWidth = lineWidth;
@@ -318,82 +322,68 @@ export default function Painter() {
         ctx!.lineJoin = 'round';
         ctx!.imageSmoothingEnabled = false;
         ctx!.beginPath();
-        ctx!.moveTo(moveToX, moveToY);
-        ctx!.lineTo(lineToX, lineToY);
+        ctx!.moveTo(moveToX * canvasRef.current!.width, moveToY * canvasRef.current!.height);
+        ctx!.lineTo(lineToX * canvasRef.current!.width, lineToY * canvasRef.current!.height);
         ctx!.closePath();
         ctx!.stroke();
     }
 
     const startFilling = (e: React.MouseEvent<HTMLCanvasElement, MouseEvent>) => {
 
-        const startingX = e.nativeEvent.offsetX;
-        const startingY = e.nativeEvent.offsetY;
+        const data = {
+            startingX: (e.nativeEvent.offsetX / canvasRef.current!.width),
+            startingY: (e.nativeEvent.offsetY / canvasRef.current!.height),
+            color: brush.color
+        }
 
-        floodFill(startingX, startingY, brush.color);
+        floodFillWithWorker(data);
 
         ws!.send(JSON.stringify({
             type: MessageType.Fill,
-            data: JSON.stringify({
-                startingX: startingX,
-                startingY: startingY,
-                color: brush.color,
-            })
+            data: JSON.stringify(data)
         }));
 
         setInstructions([
             ...instructions,
             {
                 type: MessageType.Fill,
-                data: {
-                    startingX: startingX,
-                    startingY: startingY,
-                    color: brush.color
-                }
+                data: data
             }
         ]);
     }
 
-    const hex2RGB = (hex: string) => {
-        let m = hex.match(/^#?([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i)!;
-        return {
-            r: parseInt(m[1], 16),
-            g: parseInt(m[2], 16),
-            b: parseInt(m[3], 16)
-        };
-    }
+    // runs on UI thread
+    const floodFill = (data: { startingX: number, startingY: number, color: string }) => {
+        const { startingX, startingY, color } = data;
 
-    const floodFill = (startingX: number, startingY: number, color: string) => {
         const ctx = canvasContextRef.current!;
         const canvas = canvasRef.current!;
 
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const targetColor = ctx.getImageData(startingX, startingY, 1, 1).data;
+        const targetColor = ctx.getImageData(startingX * canvasRef.current!.width, startingY * canvasRef.current!.height, 1, 1).data;
 
-        const executionQueue = [startingX, startingY];
         const seen = new Uint32Array(imageData.data.length);
-        const buf = imageData.data.buffer;
-        const data8 = new Uint8ClampedArray(buf);
-        const data32 = new Uint32Array(buf);
+        const data8 = new Uint8ClampedArray(imageData.data.buffer);
+        const data32 = new Uint32Array(imageData.data.buffer);
         const targetColor32 = new Uint32Array(targetColor.buffer)[0];
-
-        ctx.imageSmoothingEnabled = false;
+        const executionQueue = [Math.floor(startingX * canvasRef.current!.width), Math.floor(startingY * canvasRef.current!.height)];
 
         ctx.strokeStyle = color;
-
         const fillColor = hex2RGB(ctx.strokeStyle);
 
         while (executionQueue.length !== 0) {
             const x = executionQueue.shift()!;
             const y = executionQueue.shift()!;
-            if (x <= canvas.width && x >= 0 && y <= canvas.height && y >= 0 && !seen[x + y * canvas.width]) {
-                if (data32[x + y * canvas.width] === targetColor32) {
-                    data32[x + y * canvas.width] =
+            const currentPixel = Math.floor(x + y * imageData.width);
+            if (x <= imageData.width && x >= 0 && y <= imageData.height && y >= 0 && !seen[currentPixel]) {
+                if (data32[currentPixel] === targetColor32) {
+                    data32[currentPixel] =
                         255 << 24 |
                         fillColor.b << 16 |
                         fillColor.g << 8 |
                         fillColor.r
                         ;
-                    seen[x + y * canvas.width] = 1;
+                    seen[currentPixel] = 1;
                     executionQueue.push(x + 1, y);
                     executionQueue.push(x - 1, y);
                     executionQueue.push(x, y + 1);
@@ -401,8 +391,35 @@ export default function Painter() {
                 }
             }
         }
+
         imageData.data.set(data8);
         ctx.putImageData(imageData, 0, 0);
+    }
+
+    // runs on Web Worker thread
+    const floodFillWithWorker = (data: { startingX: number, startingY: number, color: string }) => {
+
+        const { startingX, startingY, color } = data;
+
+        const ctx = canvasContextRef.current!;
+        const canvas = canvasRef.current!;
+
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const targetColor = ctx.getImageData(startingX * canvasRef.current!.width, startingY * canvasRef.current!.height, 1, 1).data;
+
+        ctx.strokeStyle = color;
+        const fillColor = hex2RGB(ctx.strokeStyle);
+
+        fillWorkerRef.current!.postMessage({
+            startingX: startingX * canvasRef.current!.width,
+            startingY: startingY * canvasRef.current!.height,
+            buf: imageData.data.buffer,
+            width: imageData.width,
+            height: imageData.height,
+            targetColor,
+            fillColor
+        }, [imageData.data.buffer]);
+
     }
 
     const selectTool = (tool: Tools) => {
@@ -445,12 +462,12 @@ export default function Painter() {
     const brushSizeBtns = BrushSizes.map((size, index) => (
         <button
             key={size}
-            className={`${size === brush.width ? 'bg-white' : 'bg-gray-100'} flex justify-center items-center h-10 w-10 hover:bg-white  ${index !== BrushSizes.length - 1 ? 'mr-2' : ''}`}
+            className={`${size === brush.width ? 'bg-white' : 'bg-gray-200'} flex justify-center items-center h-10 w-10 hover:bg-white  ${index !== BrushSizes.length - 1 ? 'mr-2' : ''}`}
             onClick={changeBrushWidth}
             value={size}
         >
             <div
-                className='rounded-full'
+                className={`rounded-full ${brush.color === 'white' ? 'border border-black' : ''}`}
                 style={{
                     background: brush.color,
                     width: size,
@@ -532,7 +549,7 @@ export default function Painter() {
                     >
                         <Tooltip text='Brush'>
                             <button
-                                className={`${brush.tool === Tools.Brush ? 'bg-white' : 'bg-gray-100'} flex justify-center items-center hover:bg-white h-10 w-10`}
+                                className={`${brush.tool === Tools.Brush ? 'bg-white' : 'bg-gray-200'} flex justify-center items-center hover:bg-white h-10 w-10`}
                                 onClick={() => selectTool(Tools.Brush)}
                             >
                                 <RiBrushFill />
@@ -540,7 +557,7 @@ export default function Painter() {
                         </Tooltip>
                         <Tooltip text='Fill'>
                             <button
-                                className={`${brush.tool === Tools.Fill ? 'bg-white' : 'bg-gray-100'} flex justify-center items-center hover:bg-white h-10 w-10`}
+                                className={`${brush.tool === Tools.Fill ? 'bg-white' : 'bg-gray-200'} flex justify-center items-center hover:bg-white h-10 w-10`}
                                 onClick={() => selectTool(Tools.Fill)}
                             >
                                 <GrPaint />
@@ -548,7 +565,7 @@ export default function Painter() {
                         </Tooltip>
                         <Tooltip text='Eraser'>
                             <button
-                                className={`${brush.tool === Tools.Eraser ? 'bg-white' : 'bg-gray-100'} flex justify-center items-center hover:bg-white h-10 w-10`}
+                                className={`${brush.tool === Tools.Eraser ? 'bg-white' : 'bg-gray-200'} flex justify-center items-center hover:bg-white h-10 w-10`}
                                 onClick={() => selectTool(Tools.Eraser)}
                             >
                                 <FaEraser />
@@ -556,7 +573,7 @@ export default function Painter() {
                         </Tooltip>
                         <Tooltip text='Clear'>
                             <button
-                                className='bg-gray-100 hover:bg-white flex justify-center items-center h-10 w-10'
+                                className='bg-gray-200 hover:bg-white flex justify-center items-center h-10 w-10'
                                 onClick={clearCanvas}
                             >
                                 <FaTrashAlt />
