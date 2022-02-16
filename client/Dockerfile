@@ -8,9 +8,9 @@ RUN yarn set version berry
 
 RUN yarn set version 3.0.2
 
-COPY ./ ./
-
 RUN yarn install
+
+COPY ./ ./
 
 RUN yarn build
 
