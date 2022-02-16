@@ -58,10 +58,9 @@ export default function Room() {
 }
 
 export const getServerSideProps: GetServerSideProps = async (context: GetServerSidePropsContext) => {
-    const res = await fetch(`http://${process.env.NEXT_PUBLIC_REACT_APP_API_BASE_URL}/${context.params!.rid}`, {
+    const res = await fetch(`http://nginx:8080/${context.params!.rid}`, {
         method: 'OPTIONS',
     });
-
     if (res.status === 404) {
         return {
             notFound: true,
