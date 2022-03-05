@@ -3,13 +3,12 @@
 A [skribbl.io](https://skribbl.io/) clone made with NextJS and Go
 
 ## Not yet implemented
-- Filling in anti-aliased pixels
+- Filling in anti-aliased pixels (when using paint bucket)
 - Player avatar
 - Kick & votekick
 - Ability to join an ongoing game
 - Automatically moving onto the next round 
-- Undo action
-- Ability to join an ongoing game
+- Undo previous action
 - Re-request for different words (when the ones provided are too difficult, i.e. not an object or an action)
 
 ## How to run
