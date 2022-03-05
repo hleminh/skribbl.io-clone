@@ -13,6 +13,9 @@ module.exports = {
       cursor: {
         none: 'none'
       },
+      maxWidth: {
+        'xxs': '10rem'
+      }
     },
   },
   variants: {
