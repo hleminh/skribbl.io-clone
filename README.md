@@ -3,6 +3,8 @@
 A [skribbl.io](https://skribbl.io/) clone made with NextJS and Go
 
 ## Not yet implemented
+- Revealing letters as the time runs out
+- Factoring in the remaining time when calculating the score
 - Filling in anti-aliased pixels (when using paint bucket)
 - Player avatar
 - Kick & votekick
